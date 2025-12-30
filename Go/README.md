@@ -262,4 +262,34 @@ for{
 - break
 - continue
 
+- Conditionals in For Loop
+
+```go
+var size = 10
+var i =0
+
+for  i <= size {
+
+}
+
+for true {
+
+}
+// same as
+
+for {
+
+}
+```
+
 ---
+
+## Checkings
+
+- len()
+    - Built-in function returning length of variable accroding to its type
+    - Arrays & slices : Size of the list 
+    - Strings : The number of characters
+
+- strings.Contains(variable_name,"what we need to check for")
+    - checks if the variable contains the second arg
