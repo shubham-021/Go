@@ -1,21 +1,11 @@
 import type { Metadata } from "next";
-import { Nunito, Caveat, Fira_Code } from "next/font/google";
+import { DM_Mono } from "next/font/google";
 import "./globals.css";
 
-const nunito = Nunito({
-  subsets: ["latin"],
-  variable: "--font-nunito",
-});
-
-const caveat = Caveat({
-  subsets: ["latin"],
-  variable: "--font-caveat",
-  weight: ["400", "500", "600", "700"],
-});
-
-const firaCode = Fira_Code({
+const dmMono = DM_Mono({
   subsets: ["latin"],
   variable: "--font-mono",
+  weight: ["300", "400", "500"],
 });
 
 export const metadata: Metadata = {
@@ -29,8 +19,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${nunito.variable} ${caveat.variable} ${firaCode.variable}`}>
-      <body className="font-sans antialiased">{children}</body>
+    <html lang="en" className={dmMono.variable}>
+      <body className="font-mono antialiased">{children}</body>
     </html>
   );
 }

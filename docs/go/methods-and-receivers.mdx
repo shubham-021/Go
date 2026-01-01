@@ -1,0 +1,157 @@
+---
+title: Methods and Receivers
+description: How to attach functions to your custom types in Go
+---
+
+## What is a Method?
+
+In many programming languages, you have "classes" with "methods" attached to them. **Go doesn't have classes**, but it has something similar: you can attach functions to any type you create.
+
+Think of it like this: a regular function stands alone, but a **method** is a function that "belongs to" a specific type.
+
+## The Receiver: Connecting a Function to a Type
+
+To turn a regular function into a method, you add a **receiver** between the `func` keyword and the function name:
+
+```go
+func (m model) doSomething() {
+    // This function is now a method of the 'model' type
+}
+```
+
+The `(m model)` part is the receiver. It says: "This function belongs to the `model` type, and inside this function, use `m` to refer to the instance."
+
+## A Simple Example
+
+Let's say we have a `Rectangle` type and want to calculate its area:
+
+```go
+package main
+
+import "fmt"
+
+// Define a custom type
+type Rectangle struct {
+    width  float64
+    height float64
+}
+
+// A method that belongs to Rectangle
+func (r Rectangle) Area() float64 {
+    return r.width * r.height
+}
+
+func main() {
+    rect := Rectangle{width: 10, height: 5}
+    
+    // Call the method using dot notation
+    fmt.Println("Area:", rect.Area())  // Output: Area: 50
+}
+```
+
+Notice how we call the method with `rect.Area()` — just like calling a method on an object in other languages!
+
+## Two Types of Receivers
+
+Go has two kinds of receivers, and choosing the right one is important:
+
+### 1. Value Receiver `(m model)`
+
+A value receiver **passes a copy** of the struct to the method.
+
+```go
+type Counter struct {
+    count int
+}
+
+// Value receiver - works with a COPY
+func (c Counter) Increment() {
+    c.count++  // This changes the copy, not the original!
+}
+
+func main() {
+    counter := Counter{count: 5}
+    counter.Increment()
+    fmt.Println(counter.count)  // Still 5! The original wasn't changed.
+}
+```
+
+**The problem:** Changes inside the method don't affect the original struct.
+
+### 2. Pointer Receiver `(m *model)`
+
+A pointer receiver **passes the memory address**, so changes affect the original.
+
+```go
+type Counter struct {
+    count int
+}
+
+// Pointer receiver - works with the ORIGINAL
+func (c *Counter) Increment() {
+    c.count++  // This changes the actual struct
+}
+
+func main() {
+    counter := Counter{count: 5}
+    counter.Increment()
+    fmt.Println(counter.count)  // Now 6! The original was changed.
+}
+```
+
+## When to Use Each Type
+
+| Receiver Type | Use When | Behavior |
+|--------------|----------|----------|
+| Value `(m Model)` | You only need to **read** data | Works with a copy |
+| Pointer `(m *Model)` | You need to **modify** data | Works with the original |
+
+**Rule of Thumb:** If in doubt, use a pointer receiver. It's also more efficient for large structs because it doesn't copy all the data.
+
+## Real-World Example: A Todo Item
+
+```go
+package main
+
+import "fmt"
+
+type Todo struct {
+    title     string
+    completed bool
+}
+
+// Read-only: just checking status (value receiver is fine)
+func (t Todo) IsCompleted() bool {
+    return t.completed
+}
+
+// Modifying: need pointer receiver to change the original
+func (t *Todo) MarkComplete() {
+    t.completed = true
+}
+
+// Modifying: need pointer receiver
+func (t *Todo) SetTitle(newTitle string) {
+    t.title = newTitle
+}
+
+func main() {
+    task := Todo{title: "Learn Go", completed: false}
+    
+    fmt.Println("Completed?", task.IsCompleted())  // false
+    
+    task.MarkComplete()
+    fmt.Println("Completed?", task.IsCompleted())  // true
+    
+    task.SetTitle("Master Go")
+    fmt.Println("Title:", task.title)  // "Master Go"
+}
+```
+
+## Key Takeaways
+
+1. **Methods** are functions attached to a type using a receiver
+2. **Value receivers** `(m Model)` work with a copy — changes don't persist
+3. **Pointer receivers** `(m *Model)` work with the original — changes persist
+4. Use pointer receivers when you need to modify data or when structs are large
+5. Go automatically handles the `*` and `&` for you when calling methods

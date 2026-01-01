@@ -30,8 +30,8 @@ fn main() {
 ## Types That Cannot Be Copy
 
 - String
-- Vec<T>
-- Box<T>
+- `Vec<T>`
+- `Box<T>`
 - Any type containing heap-allocated data
 
 ## Clone Trait
@@ -82,7 +82,7 @@ fn main() {
 | Type | Behavior | Implements Copy? |
 |------|----------|------------------|
 | i32, u8, bool, f64, char | Copied | Yes |
-| String, Vec<T>, Box<T> | Moved | No |
+| `String`, `Vec<T>`, `Box<T>` | Moved | No |
 | &T (references) | Copied (just the pointer) | Yes |
 | Custom structs | Depends on fields | Must derive |
 

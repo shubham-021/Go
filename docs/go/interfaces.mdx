@@ -1,0 +1,172 @@
+---
+title: Interfaces
+description: Understanding contracts and behavior-based programming in Go
+---
+
+## What is an Interface?
+
+An interface is a **contract** that defines what something can do, without specifying how it does it.
+
+Think of it like a job description: "Must be able to speak and listen" doesn't say *how* you speak — you could whisper, shout, or use sign language. As long as you can do both things, you qualify.
+
+## Defining an Interface
+
+An interface lists method signatures that a type must have:
+
+```go
+type Speaker interface {
+    Speak() string
+}
+```
+
+This says: "Any type that has a `Speak()` method that returns a string qualifies as a Speaker."
+
+## Implicit Implementation (Go's Magic)
+
+In many languages, you explicitly say "this type implements this interface." In Go, it's **automatic**.
+
+If your type has all the methods an interface requires, it implements that interface. No special keywords needed!
+
+```go
+package main
+
+import "fmt"
+
+// The interface (contract)
+type Speaker interface {
+    Speak() string
+}
+
+// A Dog type
+type Dog struct {
+    name string
+}
+
+// Dog has a Speak method, so it's automatically a Speaker!
+func (d Dog) Speak() string {
+    return d.name + " says: Woof!"
+}
+
+// A Cat type
+type Cat struct {
+    name string
+}
+
+// Cat also has a Speak method, so it's also a Speaker!
+func (c Cat) Speak() string {
+    return c.name + " says: Meow!"
+}
+
+// This function accepts ANY Speaker
+func MakeItSpeak(s Speaker) {
+    fmt.Println(s.Speak())
+}
+
+func main() {
+    dog := Dog{name: "Buddy"}
+    cat := Cat{name: "Whiskers"}
+    
+    // Both work because both are Speakers!
+    MakeItSpeak(dog)  // "Buddy says: Woof!"
+    MakeItSpeak(cat)  // "Whiskers says: Meow!"
+}
+```
+
+## Why Are Interfaces Useful?
+
+Interfaces let you write **flexible, reusable code** that works with many different types.
+
+### Without interfaces (rigid):
+```go
+func PrintDogSound(d Dog) {
+    fmt.Println(d.Speak())
+}
+
+func PrintCatSound(c Cat) {
+    fmt.Println(c.Speak())
+}
+// Need a new function for every animal type!
+```
+
+### With interfaces (flexible):
+```go
+func PrintAnimalSound(s Speaker) {
+    fmt.Println(s.Speak())
+}
+// One function works for ALL animals that can speak!
+```
+
+## The Empty Interface: `interface{}`
+
+Every type in Go has at least zero methods. This means every type satisfies an interface that requires no methods — the **empty interface**.
+
+```go
+// This can hold ANYTHING
+var anything interface{}
+
+anything = 42
+anything = "hello"
+anything = Dog{name: "Rex"}
+```
+
+In modern Go, you can also write `any` instead of `interface{}`:
+
+```go
+var anything any  // Same as interface{}
+```
+
+This is useful when you need to accept values of unknown types (like when parsing JSON).
+
+## Real Example: The Bubble Tea Model
+
+If you're building terminal apps with Bubble Tea, your model must implement these three methods:
+
+```go
+type Model interface {
+    Init() Cmd                           // Setup: what happens at startup
+    Update(Msg) (Model, Cmd)             // Logic: handle events
+    View() string                        // Display: what to render
+}
+```
+
+Your struct automatically becomes a Model if it has these methods:
+
+```go
+type myApp struct {
+    cursor int
+    items  []string
+}
+
+// 1. Init - startup logic
+func (m myApp) Init() tea.Cmd {
+    return nil  // No startup command
+}
+
+// 2. Update - handle events
+func (m myApp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+    // Handle keyboard events, etc.
+    return m, nil
+}
+
+// 3. View - render the UI
+func (m myApp) View() string {
+    return "Hello, World!"
+}
+```
+
+Because `myApp` has all three methods, it **is** a `tea.Model` — no extra declaration needed!
+
+## Interfaces vs Structs
+
+| Concept | Purpose | Contains |
+|---------|---------|----------|
+| **Struct** | Define what something **is** (data) | Fields (variables) |
+| **Interface** | Define what something can **do** (behavior) | Method signatures |
+
+## Key Takeaways
+
+1. Interfaces define **behavior** (what methods a type must have)
+2. Implementation is **implicit** — no `implements` keyword
+3. The **empty interface** `interface{}` or `any` can hold any value
+4. Interfaces enable writing flexible code that works with multiple types
+5. A type "satisfies" an interface just by having the required methods

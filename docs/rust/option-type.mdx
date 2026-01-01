@@ -42,7 +42,7 @@ fn find_first_a(s: &str) -> Option<usize> {
 }
 
 fn main() {
-    let result = find_first_a("Shubham");
+    let result = find_first_a("Alex");
 
     match result {
         Some(index) => println!("First 'a' at index {}", index),
@@ -91,7 +91,7 @@ fn main() {
 | `unwrap()` | T | Panics |
 | `unwrap_or(default)` | T | Returns default |
 | `unwrap_or_else(f)` | T | Calls f() |
-| `map(f)` | Option<U> | Returns None |
-| `and_then(f)` | Option<U> | Returns None |
+| `map(f)` | `Option<U>` | Returns None |
+| `and_then(f)` | `Option<U>` | Returns None |
 | `is_some()` | bool | false |
 | `is_none()` | bool | true |

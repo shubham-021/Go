@@ -1,0 +1,168 @@
+---
+title: Type Switching
+description: Identifying and handling different types at runtime in Go
+---
+
+## The Problem: Unknown Types
+
+Sometimes you receive a value but don't know its exact type. This happens a lot when working with:
+
+- Events from user input (keyboard, mouse, resize)
+- Data parsed from JSON
+- Values stored in an empty interface (`interface{}` or `any`)
+
+You need a way to ask: "What type is this value, and how should I handle it?"
+
+## Type Assertions: Asking "Are You This Type?"
+
+A **type assertion** extracts the concrete type from an interface:
+
+```go
+var something interface{} = "hello"
+
+// Assert that 'something' is a string
+str := something.(string)
+fmt.Println(str)  // "hello"
+```
+
+**Danger:** If the type is wrong, your program crashes!
+
+```go
+var something interface{} = "hello"
+num := something.(int)  // PANIC! It's not an int!
+```
+
+## Safe Type Assertions with `ok`
+
+Add a second return value to check if it worked:
+
+```go
+var something interface{} = "hello"
+
+// Safe version - no crash
+str, ok := something.(string)
+if ok {
+    fmt.Println("It's a string:", str)
+} else {
+    fmt.Println("Not a string")
+}
+```
+
+The `ok` variable is `true` if the assertion succeeded, `false` otherwise.
+
+## Type Switch: Handling Multiple Possibilities
+
+When you have many possible types, use a **type switch**:
+
+```go
+func describe(value interface{}) {
+    switch v := value.(type) {
+    case string:
+        fmt.Println("It's a string:", v)
+    case int:
+        fmt.Println("It's an integer:", v)
+    case bool:
+        fmt.Println("It's a boolean:", v)
+    default:
+        fmt.Println("Unknown type!")
+    }
+}
+
+func main() {
+    describe("hello")   // It's a string: hello
+    describe(42)        // It's an integer: 42
+    describe(true)      // It's a boolean: true
+    describe(3.14)      // Unknown type!
+}
+```
+
+**Key syntax:** `switch v := value.(type)` — this is special Go syntax that only works in switches.
+
+## Real Example: Handling Keyboard Events in Bubble Tea
+
+In terminal apps with Bubble Tea, the `Update` function receives different types of messages. You use a type switch to handle them:
+
+```go
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+    // Type switch to identify what kind of message we received
+    switch msg := msg.(type) {
+    
+    case tea.KeyMsg:
+        // It's a keyboard event - msg is now a KeyMsg
+        switch msg.String() {
+        case "q", "ctrl+c":
+            return m, tea.Quit
+        case "up":
+            m.cursor--
+        case "down":
+            m.cursor++
+        }
+    
+    case tea.WindowSizeMsg:
+        // Terminal was resized - msg is now a WindowSizeMsg
+        m.width = msg.Width
+        m.height = msg.Height
+    
+    case tickMsg:
+        // Custom tick event for animations
+        m.frame++
+        return m, tick()
+    }
+    
+    return m, nil
+}
+```
+
+## How It Works
+
+1. `msg` comes in as a `tea.Msg` (an interface type)
+2. The type switch checks what concrete type `msg` actually is
+3. Inside each `case`, `msg` becomes that specific type automatically
+4. No type assertion needed — it's done for you!
+
+## Important: No Fall-Through
+
+Unlike some languages, Go's switch statements **don't fall through** by default:
+
+```go
+switch v := value.(type) {
+case string:
+    fmt.Println("string")
+    // No 'break' needed - doesn't fall through
+case int:
+    fmt.Println("int")
+}
+```
+
+If you *want* to fall through (rare), use the `fallthrough` keyword explicitly.
+
+## Combining Cases
+
+You can handle multiple types the same way:
+
+```go
+switch v := value.(type) {
+case int, int32, int64:
+    fmt.Println("Some kind of integer")
+case float32, float64:
+    fmt.Println("Some kind of float")
+case string:
+    fmt.Println("A string")
+}
+```
+
+## Type Switch vs Regular Switch
+
+| Feature | Regular Switch | Type Switch |
+|---------|---------------|-------------|
+| What it checks | Values (`== 42`, `== "hello"`) | Types (`string`, `int`, `bool`) |
+| Syntax | `switch value` | `switch v := value.(type)` |
+| Variable | Same type throughout | Changes type per case |
+
+## Key Takeaways
+
+1. **Type assertions** extract a concrete type: `v := x.(string)`
+2. Use the **comma-ok pattern** for safe assertions: `v, ok := x.(string)`
+3. **Type switches** handle multiple possible types elegantly
+4. Inside each case, the variable **becomes** that specific type
+5. Go switches **don't fall through** — no `break` needed

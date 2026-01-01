@@ -1,0 +1,348 @@
+---
+title: Go Idioms
+description: Common patterns and best practices every Go developer should know
+---
+
+## What Are Idioms?
+
+Idioms are **common patterns** that Go developers use repeatedly. Learning them helps you write code that other Go developers will instantly understand.
+
+---
+
+## The "Comma OK" Pattern
+
+Used to check if something exists or succeeded, without crashing your program.
+
+### Checking if a Map Key Exists
+
+```go
+scores := map[string]int{
+    "Alice": 95,
+    "Bob":   87,
+}
+
+// Without checking - might get 0 for missing keys
+score := scores["Charlie"]  // 0 (zero value, but did Charlie exist?)
+
+// With comma-ok - know for sure
+score, ok := scores["Charlie"]
+if ok {
+    fmt.Println("Charlie's score:", score)
+} else {
+    fmt.Println("Charlie not found")
+}
+```
+
+### Common Shorthand with `if`
+
+You can combine the check and assignment:
+
+```go
+if score, ok := scores["Alice"]; ok {
+    fmt.Println("Alice's score:", score)
+}
+```
+
+The variable `score` only exists inside that `if` block.
+
+### Safe Type Assertions
+
+```go
+var value interface{} = "hello"
+
+// Unsafe - crashes if wrong
+str := value.(string)
+
+// Safe - returns ok=false if wrong
+str, ok := value.(string)
+if ok {
+    fmt.Println("Got string:", str)
+}
+```
+
+---
+
+## The Empty Struct `struct{}{}`
+
+A special type that takes **zero bytes** of memory. It's used when you only care about the key existing, not the value.
+
+### Creating a Set
+
+Go doesn't have a built-in Set type, but you can create one:
+
+```go
+// A set of selected items (only care if index exists)
+selected := make(map[int]struct{})
+
+// Add to set
+selected[5] = struct{}{}
+selected[10] = struct{}{}
+
+// Check if exists
+if _, ok := selected[5]; ok {
+    fmt.Println("5 is selected")
+}
+
+// Remove from set
+delete(selected, 5)
+```
+
+### Why Not Use `bool`?
+
+```go
+// This works but wastes memory
+selected := make(map[int]bool)
+selected[5] = true  // bool takes 1 byte
+
+// This is more efficient
+selected := make(map[int]struct{})
+selected[5] = struct{}{}  // struct{} takes 0 bytes
+```
+
+For a few items, it doesn't matter. For millions of items, it adds up!
+
+---
+
+## `ok` vs `err`: Two Ways to Handle Failure
+
+Go has two distinct patterns for handling "something might fail":
+
+### Pattern 1: `value, ok` (Existence Check)
+
+Used when checking if something **exists**. Returns `true` or `false`.
+
+```go
+// Map lookup
+value, ok := myMap[key]
+
+// Type assertion
+str, ok := value.(string)
+
+// Channel receive
+msg, ok := <-channel  // ok is false if channel is closed
+```
+
+### Pattern 2: `value, err` (Operation Result)
+
+Used when an operation might **fail**. Returns `nil` or an error.
+
+```go
+// File operations
+file, err := os.Open("data.txt")
+if err != nil {
+    fmt.Println("Failed to open:", err)
+    return
+}
+
+// Network requests
+resp, err := http.Get("https://api.example.com")
+if err != nil {
+    log.Fatal("Request failed:", err)
+}
+```
+
+### When to Use Which
+
+| Pattern | Question Being Asked | Return Values |
+|---------|---------------------|---------------|
+| `ok` | "Does this exist?" | `true` / `false` |
+| `err` | "Did this succeed?" | `nil` / error message |
+
+---
+
+## Memory Allocation: `new()` vs `make()`
+
+Go has two built-in functions for allocation that often confuse beginners. Here's the difference:
+
+### `new()` — Allocates Memory, Returns Pointer
+
+`new(T)` allocates memory for a type `T`, initializes it to **zero values**, and returns a **pointer** to it.
+
+```go
+// Allocate an int, get a pointer to it
+p := new(int)
+fmt.Println(*p)  // 0 (zero value)
+*p = 42
+fmt.Println(*p)  // 42
+
+// Allocate a struct
+type Person struct {
+    name string
+    age  int
+}
+person := new(Person)
+fmt.Println(person)       // &{ 0} (pointer to zero-value struct)
+fmt.Println(person.name)  // "" (empty string)
+fmt.Println(person.age)   // 0
+```
+
+**Note:** `new(T)` is equivalent to:
+```go
+var t T
+p := &t  // Take address of zero-value variable
+```
+
+### `make()` — Initializes Special Types
+
+`make()` is **only** for three types that need internal setup: **maps**, **slices**, and **channels**.
+
+```go
+// Maps - REQUIRED, or you'll crash
+m := make(map[string]int)
+
+// Slices - optional but useful for pre-allocation
+s := make([]int, 0, 10)  // length=0, capacity=10
+
+// Channels - required
+ch := make(chan string)
+```
+
+### Why Can't You Use `new()` for Maps?
+
+`new(map[string]int)` gives you a pointer to a `nil` map — useless and dangerous!
+
+```go
+// DON'T DO THIS
+m := new(map[string]int)
+fmt.Println(m)   // Pointer to nil map
+(*m)["key"] = 1  // PANIC! Can't write to nil map
+
+// DO THIS
+m := make(map[string]int)
+m["key"] = 1  // Works!
+```
+
+### Quick Comparison
+
+| Function | Purpose | Returns | Used For |
+|----------|---------|---------|----------|
+| `new(T)` | Allocate memory | `*T` (pointer to zero value) | Structs, basic types |
+| `make(T)` | Create & initialize | `T` (not a pointer) | Maps, slices, channels |
+
+### When to Use Each
+
+```go
+// Use new() when you need a POINTER to a zero-value struct
+config := new(Config)
+
+// But this is more common/idiomatic in Go:
+config := &Config{}  // Same thing, clearer
+
+// Use make() for maps, slices, channels - NO CHOICE
+users := make(map[int]User)
+items := make([]string, 0, 100)
+events := make(chan Event, 10)
+```
+
+### Maps: Must Use `make()`
+
+```go
+// WRONG - this is nil, will crash when you add items
+var scores map[string]int
+scores["Alice"] = 95  // PANIC!
+
+// RIGHT - properly initialized
+scores := make(map[string]int)
+scores["Alice"] = 95  // Works!
+```
+
+### Slices: Optional but Useful
+
+```go
+// This works (zero capacity, grows as needed)
+var items []string
+items = append(items, "item1")
+
+// This pre-allocates capacity (more efficient)
+items := make([]string, 0, 10)  // length=0, capacity=10
+```
+
+### Channels
+
+```go
+// Unbuffered channel (blocks until received)
+ch := make(chan string)
+
+// Buffered channel (can hold 5 items before blocking)
+ch := make(chan string, 5)
+```
+
+---
+
+## `nil`: The Zero State
+
+`nil` represents "nothing" for pointers, maps, slices, channels, and interfaces.
+
+```go
+var m map[string]int     // nil - reading returns zero values, writing crashes
+var s []string           // nil - but append still works!
+var p *int               // nil - dereferencing crashes
+var ch chan int          // nil - operations block forever
+var i interface{}        // nil - no value stored
+```
+
+### Nil Slices Are Usable
+
+A `nil` slice works with `append`:
+
+```go
+var items []string  // nil
+items = append(items, "hello")  // Works!
+fmt.Println(items)  // [hello]
+```
+
+### Nil Maps Are NOT Usable
+
+A `nil` map will crash if you try to write to it:
+
+```go
+var scores map[string]int  // nil
+scores["Alice"] = 95       // PANIC!
+```
+
+Always initialize maps with `make()`.
+
+---
+
+## Defer: Cleanup Guaranteed
+
+`defer` schedules a function to run when the surrounding function returns. Use it for cleanup.
+
+```go
+func readFile() {
+    file, err := os.Open("data.txt")
+    if err != nil {
+        return
+    }
+    defer file.Close()  // Will run when readFile() returns
+    
+    // ... read from file ...
+    // Even if there's an error or panic, file.Close() runs
+}
+```
+
+### Multiple Defers Run in Reverse Order
+
+```go
+func example() {
+    defer fmt.Println("first")
+    defer fmt.Println("second")
+    defer fmt.Println("third")
+}
+// Output: third, second, first (LIFO order)
+```
+
+---
+
+## Summary Table
+
+| Idiom | Purpose | Example |
+|-------|---------|---------|
+| Comma-ok | Check existence safely | `v, ok := m[key]` |
+| Empty struct | Zero-memory set values | `map[int]struct{}` |
+| `ok` pattern | Existence checks | Map lookup, type assertion |
+| `err` pattern | Operation results | File I/O, network calls |
+| `new()` | Allocate & zero-initialize | `p := new(Config)` |
+| `make()` | Initialize maps/slices/channels | `make(map[K]V)` |
+| `nil` | Zero state for reference types | Uninitialized maps, slices |
+| `defer` | Guaranteed cleanup | `defer file.Close()` |

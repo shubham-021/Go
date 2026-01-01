@@ -13,7 +13,7 @@ Go can infer the type when you assign a value:
 
 ```go
 var userName // Error: no value assigned, Go cannot infer the type
-userName = "Shubham"
+userName = "Alex"
 ```
 
 The correct way is to either:
@@ -21,10 +21,10 @@ The correct way is to either:
 ```go
 // Option 1: Declare with type, assign later
 var userName string
-userName = "Shubham"
+userName = "Alex"
 
 // Option 2: Declare and assign together (type inferred)
-userName := "Shubham"
+userName := "Alex"
 ```
 
 ## Pointers
@@ -32,9 +32,9 @@ userName := "Shubham"
 Pointers hold the memory address of a value:
 
 ```go
-var name = "Shubham"
+var name = "Alex"
 
-fmt.Println(name)   // Prints the value: Shubham
+fmt.Println(name)   // Prints the value: Alex
 fmt.Println(&name)  // Prints the memory address: 0xc000010230
 ```
 
