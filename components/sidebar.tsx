@@ -65,8 +65,8 @@ export function Sidebar() {
                 <Menu className="w-5 h-5 text-white" />
             </button>
 
-            <aside className="hidden lg:block w-64 shrink-0 border-r border-zinc-800">
-                <div className="sticky top-0 h-screen overflow-y-auto overscroll-contain p-6">
+            <aside className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:flex lg:w-64 lg:flex-col border-r border-zinc-800 bg-zinc-950">
+                <div className="h-full overflow-y-auto overscroll-contain p-6">
                     <SidebarContent />
                 </div>
             </aside>
