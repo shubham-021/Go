@@ -1,0 +1,437 @@
+---
+title: Cookie Authentication
+description: Implementing secure cookie-based authentication and protecting against CSRF attacks
+---
+
+## Why Cookie-Based Authentication?
+
+Cookies provide a stateful authentication mechanism where the server sets a token that the browser automatically includes in subsequent requests.
+
+| Aspect | Cookies | Token in Header |
+|--------|---------|-----------------|
+| Storage | Handled by browser | Manual (localStorage) |
+| Sent automatically | Yes | No (must add to requests) |
+| XSS protection | `httpOnly` flag | Vulnerable if in localStorage |
+| CSRF protection | Requires extra care | Not vulnerable to CSRF |
+
+---
+
+## Setting Up Cookie Authentication
+
+### 1. Install Required Packages
+
+```bash
+npm install cookie-parser
+```
+
+### 2. Configure Middleware
+
+```javascript
+import express from 'express';
+import cookieParser from 'cookie-parser';
+
+const app = express();
+
+app.use(cookieParser());
+app.use(express.json());
+```
+
+### 3. Configure CORS
+
+For cross-origin requests (frontend and backend on different domains/ports), both sides must enable credentials:
+
+**Backend:**
+
+```javascript
+import cors from 'cors';
+
+app.use(cors({
+  origin: 'http://localhost:5173', // Your frontend URL
+  credentials: true               // Allow cookies to be sent
+}));
+```
+
+**Frontend (fetch):**
+
+```javascript
+fetch('http://localhost:3000/api/login', {
+  method: 'POST',
+  credentials: 'include', // Required to send/receive cookies
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ email, password })
+});
+```
+
+**Frontend (axios):**
+
+```javascript
+axios.defaults.withCredentials = true;
+
+// Or per-request
+axios.post('/api/login', data, { withCredentials: true });
+```
+
+---
+
+## Setting Cookies
+
+After successful authentication, set a cookie with the token:
+
+```javascript
+app.post('/api/login', async (req, res) => {
+  const { email, password } = req.body;
+
+  // Validate credentials...
+  const user = await authenticateUser(email, password);
+  
+  if (!user) {
+    return res.status(401).json({ error: 'Invalid credentials' });
+  }
+
+  // Generate JWT or session token
+  const token = generateToken(user);
+
+  // Set cookie
+  res.cookie('token', token, {
+    httpOnly: true,   // Not accessible via JavaScript
+    secure: true,     // Only sent over HTTPS
+    sameSite: 'lax',  // CSRF protection
+    maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days in milliseconds
+  });
+
+  res.json({ message: 'Login successful', user });
+});
+```
+
+---
+
+## Cookie Options Explained
+
+| Option | Purpose | Recommended Value |
+|--------|---------|-------------------|
+| `httpOnly` | Prevents JavaScript access (XSS protection) | `true` |
+| `secure` | Only sent over HTTPS | `true` in production |
+| `sameSite` | Controls cross-site sending (CSRF protection) | `'strict'` or `'lax'` |
+| `maxAge` | Expiration time in milliseconds | Based on your needs |
+| `path` | URL path scope | `'/'` (default) |
+| `domain` | Domain scope | Usually omit (defaults to current) |
+
+### Development vs Production
+
+```javascript
+const isProduction = process.env.NODE_ENV === 'production';
+
+res.cookie('token', token, {
+  httpOnly: true,
+  secure: isProduction,      // false in development (localhost)
+  sameSite: isProduction ? 'strict' : 'lax',
+  maxAge: 7 * 24 * 60 * 60 * 1000
+});
+```
+
+---
+
+## Reading Cookies
+
+Access cookies in your route handlers via `req.cookies`:
+
+```javascript
+app.get('/api/profile', (req, res) => {
+  const token = req.cookies.token;
+
+  if (!token) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+
+  try {
+    const user = verifyToken(token);
+    res.json({ user });
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
+```
+
+---
+
+## Clearing Cookies (Logout)
+
+Two approaches to clear a cookie:
+
+**Method 1: Clear with matching options**
+
+```javascript
+app.post('/api/logout', (req, res) => {
+  res.clearCookie('token', {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'lax'
+  });
+
+  res.json({ message: 'Logged out successfully' });
+});
+```
+
+**Method 2: Set empty value with immediate expiry**
+
+```javascript
+app.post('/api/logout', (req, res) => {
+  res.cookie('token', '', {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'strict',
+    maxAge: 0
+  });
+
+  res.json({ message: 'Logged out successfully' });
+});
+```
+
+The cookie options must match those used when setting the cookie, otherwise the browser may not clear it.
+
+---
+
+## CSRF (Cross-Site Request Forgery)
+
+### What is CSRF?
+
+CSRF is an attack where a malicious website tricks a logged-in user's browser into making unintended requests to your application.
+
+### How the Attack Works
+
+**Step 1:** User logs into `bank.com` and receives a session cookie.
+
+**Step 2:** User visits `malicious.com` (without logging out of bank).
+
+**Step 3:** Malicious site contains a hidden form:
+
+```html
+<form action="https://bank.com/transfer" method="POST" id="evil-form">
+  <input type="hidden" name="to" value="attacker" />
+  <input type="hidden" name="amount" value="10000" />
+</form>
+<script>document.getElementById('evil-form').submit();</script>
+```
+
+**Step 4:** Browser submits the form to `bank.com`, automatically attaching the user's cookies.
+
+**Step 5:** `bank.com` sees a valid session cookie and processes the transfer.
+
+### Why Cookies Are Sent
+
+Cookies are scoped by the **request destination**, not the **page origin**:
+
+| Page Origin | Request Destination | Cookie Sent? |
+|-------------|---------------------|--------------|
+| `malicious.com` | `bank.com` | Yes (this is the problem) |
+| `bank.com` | `bank.com` | Yes |
+| `other.com` | `other.com` | Yes |
+
+The browser doesn't care that the form is on `malicious.com`. Because the request goes to `bank.com`, it includes `bank.com`'s cookies.
+
+---
+
+## Protecting Against CSRF
+
+### 1. SameSite Cookie Attribute
+
+The primary defense. Controls when cookies are sent with cross-site requests.
+
+| Value | Behavior | Security Level |
+|-------|----------|----------------|
+| `strict` | Only sent in same-origin requests | Highest |
+| `lax` | Sent on same-origin + top-level GET navigations | Default, good balance |
+| `none` | Always sent (cross-origin too) | Lowest (requires `secure: true`) |
+
+```javascript
+res.cookie('token', token, {
+  httpOnly: true,
+  secure: true,
+  sameSite: 'strict' // Blocks all cross-site cookie sending
+});
+```
+
+**How SameSite blocks CSRF:**
+
+With `sameSite: 'strict'`:
+
+| Scenario | Cookie Sent? |
+|----------|--------------|
+| User on `bank.com` submits form to `bank.com` | Yes |
+| User on `malicious.com` submits form to `bank.com` | No |
+| User clicks link on `malicious.com` to `bank.com` | No |
+
+With `sameSite: 'lax'`:
+
+| Scenario | Cookie Sent? |
+|----------|--------------|
+| User on `bank.com` submits form to `bank.com` | Yes |
+| User on `malicious.com` submits form to `bank.com` | No (POST blocked) |
+| User clicks link on `malicious.com` to `bank.com` | Yes (GET allowed) |
+
+### 2. CSRF Tokens
+
+Generate a unique token per session and require it in requests. The attacker can't know this token.
+
+```javascript
+import crypto from 'crypto';
+
+// Generate token on login
+app.post('/api/login', (req, res) => {
+  // ... authenticate user ...
+
+  const csrfToken = crypto.randomBytes(32).toString('hex');
+
+  // Store in session
+  req.session.csrfToken = csrfToken;
+
+  // Send to client (NOT in a cookie)
+  res.json({ csrfToken, user });
+});
+
+// Verify token on state-changing requests
+app.post('/api/transfer', (req, res) => {
+  const clientToken = req.headers['x-csrf-token'];
+  const sessionToken = req.session.csrfToken;
+
+  if (!clientToken || clientToken !== sessionToken) {
+    return res.status(403).json({ error: 'Invalid CSRF token' });
+  }
+
+  // Process request...
+});
+```
+
+**Frontend:**
+
+```javascript
+// Store token received from login
+let csrfToken = response.csrfToken;
+
+// Include in all state-changing requests
+fetch('/api/transfer', {
+  method: 'POST',
+  credentials: 'include',
+  headers: {
+    'Content-Type': 'application/json',
+    'X-CSRF-Token': csrfToken
+  },
+  body: JSON.stringify({ to: 'recipient', amount: 100 })
+});
+```
+
+### 3. Verify Origin Header
+
+Check that requests come from your own domain:
+
+```javascript
+function validateOrigin(req, res, next) {
+  const origin = req.headers.origin || req.headers.referer;
+  const allowedOrigins = [
+    'https://myapp.com',
+    'https://www.myapp.com'
+  ];
+
+  if (!origin || !allowedOrigins.some(o => origin.startsWith(o))) {
+    return res.status(403).json({ error: 'Invalid origin' });
+  }
+
+  next();
+}
+
+app.post('/api/transfer', validateOrigin, (req, res) => {
+  // Process request...
+});
+```
+
+---
+
+## Complete Auth Implementation
+
+```javascript
+import express from 'express';
+import cookieParser from 'cookie-parser';
+import cors from 'cors';
+import jwt from 'jsonwebtoken';
+
+const app = express();
+
+app.use(cookieParser());
+app.use(express.json());
+app.use(cors({
+  origin: process.env.FRONTEND_URL,
+  credentials: true
+}));
+
+const JWT_SECRET = process.env.JWT_SECRET;
+const isProduction = process.env.NODE_ENV === 'production';
+
+// Cookie configuration
+const cookieOptions = {
+  httpOnly: true,
+  secure: isProduction,
+  sameSite: isProduction ? 'strict' : 'lax',
+  maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+};
+
+// Login
+app.post('/api/login', async (req, res) => {
+  const { email, password } = req.body;
+
+  const user = await authenticateUser(email, password);
+  if (!user) {
+    return res.status(401).json({ error: 'Invalid credentials' });
+  }
+
+  const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '7d' });
+
+  res.cookie('token', token, cookieOptions);
+  res.json({ user: { id: user.id, email: user.email } });
+});
+
+// Logout
+app.post('/api/logout', (req, res) => {
+  res.clearCookie('token', cookieOptions);
+  res.json({ message: 'Logged out' });
+});
+
+// Auth middleware
+function requireAuth(req, res, next) {
+  const token = req.cookies.token;
+
+  if (!token) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    req.userId = payload.userId;
+    next();
+  } catch (err) {
+    res.clearCookie('token', cookieOptions);
+    res.status(401).json({ error: 'Invalid or expired token' });
+  }
+}
+
+// Protected route
+app.get('/api/profile', requireAuth, async (req, res) => {
+  const user = await getUserById(req.userId);
+  res.json({ user });
+});
+
+app.listen(3000);
+```
+
+---
+
+## Security Checklist
+
+| Protection | Implementation |
+|------------|----------------|
+| XSS (token theft) | `httpOnly: true` |
+| MITM attacks | `secure: true` + HTTPS |
+| CSRF attacks | `sameSite: 'strict'` or `'lax'` |
+| Token leakage | Avoid localStorage for tokens |
+| Session fixation | Regenerate token on login |
+| Brute force | Rate limiting on login |
+

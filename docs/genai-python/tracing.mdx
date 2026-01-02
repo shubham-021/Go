@@ -1,0 +1,129 @@
+---
+title: Tracing and Observability
+description: Monitoring and debugging LLM applications
+---
+
+## Why Tracing Matters
+
+LLM applications are complex:
+- Multiple API calls
+- Non-deterministic outputs
+- Prompt engineering iterations
+- Cost tracking
+- Latency optimization
+
+Tracing provides visibility into what's happening inside your pipelines.
+
+---
+
+## What to Track
+
+| Metric | Why |
+|--------|-----|
+| Inputs/Outputs | Debug unexpected results |
+| Latency | Optimize performance |
+| Token usage | Control costs |
+| Errors | Identify failures |
+| Model versions | Compare changes |
+
+---
+
+## LangSmith
+
+Tracing platform by LangChain.
+
+**Features:**
+- Automatic tracing for LangChain/LangGraph
+- Prompt versioning and testing
+- Dataset management
+- Evaluation tools
+
+**Setup:**
+```bash
+pip install langsmith
+export LANGCHAIN_TRACING_V2=true
+export LANGCHAIN_API_KEY=your_key
+```
+
+Once enabled, all LangChain operations are automatically traced.
+
+**Viewing traces:**
+- Each run shows inputs, outputs, and intermediate steps
+- See token counts and latency
+- Compare different runs
+
+---
+
+## LangFuse
+
+Open-source alternative to LangSmith.
+
+**Features:**
+- Self-hostable
+- Works with any LLM (not just LangChain)
+- Cost tracking
+- User feedback collection
+- A/B testing
+
+**Setup:**
+```bash
+pip install langfuse
+```
+
+```python
+from langfuse import Langfuse
+
+langfuse = Langfuse()
+
+# Manual tracing
+trace = langfuse.trace(name="my-workflow")
+
+# Track LLM call
+generation = trace.generation(
+    name="chat",
+    model="gpt-4",
+    input=messages,
+    output=response
+)
+```
+
+**With LangChain:**
+```python
+from langfuse.callback import CallbackHandler
+
+handler = CallbackHandler()
+llm.invoke(prompt, callbacks=[handler])
+```
+
+---
+
+## What to Look For
+
+### Debugging
+
+- Why did the model give this output?
+- What context was provided?
+- Did retrieval return relevant documents?
+
+### Optimization
+
+- Which step is slowest?
+- Are we using too many tokens?
+- Can we cache any calls?
+
+### Quality
+
+- Are outputs consistent?
+- Do certain inputs cause failures?
+- How do different prompts compare?
+
+---
+
+## Best Practices
+
+1. **Trace in development:** Debug issues before production
+2. **Sample in production:** 100% tracing may be expensive
+3. **Add metadata:** Tag traces by user, feature, version
+4. **Set up alerts:** Notify on errors or high latency
+5. **Review regularly:** Look for patterns in failures
+

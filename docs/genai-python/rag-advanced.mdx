@@ -1,0 +1,410 @@
+---
+title: Advanced RAG
+description: Query transformation, routing, and advanced retrieval techniques
+---
+
+## Beyond Basic RAG
+
+Basic RAG retrieves chunks based on query similarity. Advanced RAG adds processing steps to improve retrieval and generation quality.
+
+```
+Basic:    Query → Retrieve → Generate
+
+Advanced: Query → [Transform] → [Route] → Retrieve → [Process] → Generate
+```
+
+---
+
+## Query Transformation
+
+Modify the user's query before retrieval to improve results.
+
+### Why Transform Queries?
+
+User queries are often:
+- Too short or vague
+- Missing context
+- Phrased differently than documents
+
+### Query Expansion
+
+Add related terms to broaden the search.
+
+```
+Original: "Python web framework"
+Expanded: "Python web framework Django Flask FastAPI backend server"
+```
+
+### Query Rewriting
+
+Rephrase for better retrieval.
+
+```
+Original: "How do I make it stop crashing?"
+Rewritten: "How to fix application crash errors debugging solutions"
+```
+
+### Multi-Query Generation
+
+Generate multiple query variations and retrieve for each.
+
+```
+Original: "What are the benefits of RAG?"
+
+Generated queries:
+1. "RAG advantages over fine-tuning"
+2. "Why use retrieval augmented generation"
+3. "Benefits of combining retrieval with LLMs"
+```
+
+Retrieve for all queries, merge and deduplicate results.
+
+---
+
+## Parallel Query (Fan Out)
+
+Send multiple queries simultaneously and merge results.
+
+```
+User Query
+    ↓
+Generate N query variations
+    ↓
+[Query 1] → Retrieve → Results 1
+[Query 2] → Retrieve → Results 2
+[Query 3] → Retrieve → Results 3
+    ↓
+Merge & Deduplicate
+    ↓
+Final Results
+```
+
+This improves recall by capturing documents relevant to different phrasings.
+
+---
+
+## Reciprocal Rank Fusion (RRF)
+
+Merge results from multiple retrievers or queries.
+
+### The Problem
+
+Different queries return results with different scores. How do you combine them fairly?
+
+### The Solution
+
+Use rank position instead of raw scores:
+
+```
+RRF_score(doc) = Σ 1 / (k + rank_i(doc))
+```
+
+Where:
+- `rank_i(doc)` = position of document in result list i
+- `k` = constant (typically 60)
+
+**Example:**
+
+Document A is:
+- Rank 1 in Query 1 results
+- Rank 5 in Query 2 results
+
+```
+RRF_score(A) = 1/(60+1) + 1/(60+5) = 0.0164 + 0.0154 = 0.0318
+```
+
+Documents appearing in multiple result lists get higher combined scores.
+
+---
+
+## Query Decomposition
+
+Break complex queries into simpler sub-queries.
+
+### The Problem
+
+Complex questions require information scattered across multiple documents:
+
+```
+"Compare the performance and cost of RAG vs fine-tuning for customer support"
+```
+
+This needs:
+- RAG performance data
+- RAG cost data
+- Fine-tuning performance data
+- Fine-tuning cost data
+
+### Sub-Query Approaches
+
+**Less Abstract (Chain of Thought):**
+
+Break down into sequential steps:
+```
+1. What is RAG performance for customer support?
+2. What does RAG cost for customer support?
+3. What is fine-tuning performance for customer support?
+4. What does fine-tuning cost for customer support?
+```
+
+**Abstract (Step-Back Prompting):**
+
+Ask a more general question first:
+```
+Step-back: "What are the key factors in comparing ML approaches for production?"
+Then: Apply those factors to compare RAG vs fine-tuning
+```
+
+Useful for questions requiring broad understanding before specifics.
+
+---
+
+## HyDE (Hypothetical Document Embeddings)
+
+Generate a hypothetical answer, then use it for retrieval.
+
+### The Problem
+
+Short queries don't contain enough information for good embedding similarity:
+
+```
+Query: "Python decorators"
+```
+
+This query embedding might not match well with detailed documentation.
+
+### The Solution
+
+1. Ask the LLM to generate a hypothetical answer
+2. Embed the hypothetical answer
+3. Use that embedding for retrieval
+
+```
+Query: "Python decorators"
+
+Hypothetical answer: "Python decorators are functions that modify 
+the behavior of other functions. They use the @symbol syntax and 
+are commonly used for logging, authentication, and timing..."
+
+↓ Embed this longer text ↓
+
+Similarity search finds documents about decorators
+```
+
+### When to Use HyDE
+
+- Short, ambiguous queries
+- Large, capable LLM available
+- Documents have detailed explanations
+
+### When NOT to Use HyDE
+
+- Simple keyword lookups
+- LLM might hallucinate incorrect hypothetical
+- Latency-critical applications (adds LLM call)
+
+---
+
+## Query Routing
+
+Direct queries to different retrieval strategies or knowledge bases.
+
+### Logical Routing
+
+Route based on query classification to different collections.
+
+```
+User Query
+    ↓
+Classify: Technical? Sales? HR?
+    ↓
+Technical → Search technical_docs collection
+Sales     → Search sales_docs collection
+HR        → Search hr_policies collection
+```
+
+**Implementation:**
+```python
+# Use LLM or classifier to categorize
+category = classify_query(query)
+
+if category == "technical":
+    results = tech_db.search(query)
+elif category == "sales":
+    results = sales_db.search(query)
+else:
+    results = general_db.search(query)
+```
+
+### Semantic Routing
+
+Match query against prompt templates, use the best match.
+
+```
+Templates:
+1. "You are a technical expert. Answer coding questions..."
+2. "You are a sales consultant. Help with pricing..."
+3. "You are an HR advisor. Explain policies..."
+
+User Query: "How much does the enterprise plan cost?"
+    ↓
+Embed query, compare to template embeddings
+    ↓
+Best match: Template 2 (sales)
+    ↓
+Use sales prompt template with retrieved context
+```
+
+---
+
+## Indexing Strategies
+
+How you organize documents affects retrieval quality.
+
+### Flat Index
+
+All chunks in one collection.
+
+**Pros:** Simple
+**Cons:** No structure, slower at scale
+
+### Hierarchical Index
+
+Multiple levels of granularity.
+
+```
+Document summaries (high level)
+    ↓
+Section summaries (medium level)
+    ↓
+Paragraph chunks (detail level)
+```
+
+Retrieve at appropriate level based on query.
+
+### Parent-Child Index
+
+Link chunks to their parent documents.
+
+```
+1. Retrieve relevant chunks
+2. Fetch parent document for more context
+3. Include both in prompt
+```
+
+---
+
+## Re-Ranking
+
+After initial retrieval, re-order results by relevance.
+
+### Why Re-Rank?
+
+Embedding similarity is fast but imprecise. Re-rankers provide more accurate relevance scores.
+
+### Cross-Encoder Re-Ranking
+
+Use a model that sees both query and document together:
+
+```
+Initial retrieval: [Doc5, Doc2, Doc8, Doc1, Doc3] (by embedding similarity)
+    ↓
+Cross-encoder scores each (query, doc) pair
+    ↓
+Re-ranked: [Doc2, Doc1, Doc5, Doc3, Doc8] (by cross-encoder score)
+```
+
+Cross-encoders are slower but more accurate than embedding comparison.
+
+### Cohere Reranker
+
+```python
+import cohere
+
+co = cohere.Client("api-key")
+results = co.rerank(
+    query="What is RAG?",
+    documents=[...],
+    top_n=5
+)
+```
+
+---
+
+## Hybrid Search
+
+Combine vector search with traditional keyword search.
+
+### Why Hybrid?
+
+| Search Type | Good At | Bad At |
+|-------------|---------|--------|
+| Vector | Semantic similarity, synonyms | Exact matches, rare terms |
+| Keyword | Exact matches, names, codes | Synonyms, context |
+
+### Implementation
+
+```
+Query
+    ↓ ↓
+Vector Search  BM25 Keyword Search
+    ↓ ↓
+    Merge (RRF or weighted)
+    ↓
+Final Results
+```
+
+Many vector databases support hybrid search natively.
+
+---
+
+## Advanced RAG Pipeline
+
+Complete advanced RAG flow:
+
+```
+1. Query Analysis
+   - Classify query type
+   - Determine if decomposition needed
+
+2. Query Transformation
+   - Rewrite for clarity
+   - Expand with related terms
+   - Generate sub-queries if complex
+
+3. Routing
+   - Select appropriate knowledge base(s)
+   - Choose retrieval strategy
+
+4. Retrieval
+   - Hybrid search (vector + keyword)
+   - Retrieve for each sub-query
+   - Merge with RRF
+
+5. Post-Processing
+   - Re-rank by relevance
+   - Filter by score threshold
+   - Deduplicate
+
+6. Generation
+   - Construct prompt with context
+   - Generate response
+   - Include source citations
+```
+
+---
+
+## When to Use What
+
+| Technique | Use When |
+|-----------|----------|
+| Query Expansion | Short queries, missing context |
+| Multi-Query | Different phrasings might match different docs |
+| Decomposition | Complex multi-part questions |
+| Step-Back | Need broader understanding first |
+| HyDE | Short queries, detailed documents |
+| Logical Routing | Multiple distinct knowledge bases |
+| Semantic Routing | Different prompt templates for different query types |
+| Re-Ranking | Quality > speed, have compute budget |
+| Hybrid Search | Mix of semantic and exact-match needs |
+

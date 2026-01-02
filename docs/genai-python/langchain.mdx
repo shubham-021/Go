@@ -1,0 +1,205 @@
+---
+title: LangChain
+description: A framework for building LLM-powered applications
+---
+
+## What is LangChain?
+
+LangChain is a framework for developing applications powered by LLMs. It provides abstractions for common patterns and integrations with various tools, databases, and models.
+
+**Core value:** Build complex LLM pipelines by chaining components together.
+
+---
+
+## When to Use LangChain
+
+| Use LangChain | Avoid LangChain |
+|---------------|-----------------|
+| RAG applications | Simple API calls |
+| Multi-step workflows | Single prompt/response |
+| Need many integrations | Custom performance needs |
+| Rapid prototyping | Full control required |
+
+---
+
+## Core Concepts
+
+### Models
+
+Wrappers around LLM providers (OpenAI, Anthropic, local models).
+
+```python
+from langchain_openai import ChatOpenAI
+
+llm = ChatOpenAI(model="gpt-4", temperature=0)
+response = llm.invoke("What is Python?")
+```
+
+### Prompts
+
+Templates for constructing prompts with variables.
+
+```python
+from langchain_core.prompts import ChatPromptTemplate
+
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "You are a {role}."),
+    ("human", "{question}")
+])
+
+formatted = prompt.invoke({"role": "teacher", "question": "Explain recursion"})
+```
+
+### Chains
+
+Combine components into sequences.
+
+```python
+from langchain_core.output_parsers import StrOutputParser
+
+chain = prompt | llm | StrOutputParser()
+result = chain.invoke({"role": "teacher", "question": "Explain recursion"})
+```
+
+The `|` operator pipes output from one component to the next.
+
+### Document Loaders
+
+Load data from various sources.
+
+```python
+from langchain_community.document_loaders import PyPDFLoader
+
+loader = PyPDFLoader("document.pdf")
+pages = loader.load()
+```
+
+### Text Splitters
+
+Chunk documents for processing.
+
+```python
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+
+splitter = RecursiveCharacterTextSplitter(
+    chunk_size=500,
+    chunk_overlap=50
+)
+chunks = splitter.split_documents(pages)
+```
+
+### Embeddings
+
+Generate vector embeddings.
+
+```python
+from langchain_openai import OpenAIEmbeddings
+
+embeddings = OpenAIEmbeddings()
+vector = embeddings.embed_query("Hello world")
+```
+
+### Vector Stores
+
+Store and search embeddings.
+
+```python
+from langchain_chroma import Chroma
+
+vectorstore = Chroma.from_documents(
+    documents=chunks,
+    embedding=embeddings
+)
+
+results = vectorstore.similarity_search("query", k=3)
+```
+
+### Retrievers
+
+Abstract interface for retrieval.
+
+```python
+retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
+docs = retriever.invoke("What is X?")
+```
+
+---
+
+## Building a RAG Chain
+
+```python
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_chroma import Chroma
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+
+# Setup
+llm = ChatOpenAI(model="gpt-4")
+embeddings = OpenAIEmbeddings()
+vectorstore = Chroma(embedding_function=embeddings)
+retriever = vectorstore.as_retriever()
+
+# Prompt
+prompt = ChatPromptTemplate.from_template("""
+Answer based on the context:
+
+Context: {context}
+
+Question: {question}
+""")
+
+# Chain
+chain = (
+    {"context": retriever, "question": RunnablePassthrough()}
+    | prompt
+    | llm
+)
+
+response = chain.invoke("What is RAG?")
+```
+
+---
+
+## LCEL (LangChain Expression Language)
+
+Modern way to compose chains using the `|` operator.
+
+```python
+# Components flow left to right
+chain = prompt | llm | output_parser
+
+# Parallel execution
+from langchain_core.runnables import RunnableParallel
+
+chain = RunnableParallel({
+    "answer": prompt | llm,
+    "sources": retriever
+})
+```
+
+---
+
+## Tools and Agents
+
+LangChain can give LLMs access to tools (search, calculators, APIs).
+
+```python
+from langchain.agents import create_openai_tools_agent
+from langchain_community.tools import WikipediaQueryRun
+
+tools = [WikipediaQueryRun()]
+agent = create_openai_tools_agent(llm, tools, prompt)
+```
+
+---
+
+## Key Integrations
+
+| Category | Examples |
+|----------|----------|
+| LLMs | OpenAI, Anthropic, Cohere, Ollama |
+| Embeddings | OpenAI, HuggingFace, Cohere |
+| Vector DBs | Chroma, Pinecone, Weaviate, Qdrant |
+| Document Loaders | PDF, Web, Notion, S3, GitHub |
+| Tools | Search, Math, APIs, Databases |
+

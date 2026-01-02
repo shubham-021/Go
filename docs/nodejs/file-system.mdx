@@ -1,0 +1,518 @@
+---
+title: File System
+description: Essential fs module operations every Node.js developer should know
+---
+
+## The fs Module
+
+The `fs` module provides APIs for interacting with the file system. Node.js offers three flavors:
+
+| API | Style | Import |
+|-----|-------|--------|
+| Callback | Async, older style | `import fs from 'fs'` |
+| Promise | Async, modern style | `import fs from 'fs/promises'` |
+| Sync | Blocking | `import fs from 'fs'` |
+
+**Recommendation:** Use `fs/promises` for most cases. Avoid sync methods in production servers.
+
+```javascript
+// Modern approach
+import { readFile, writeFile } from 'fs/promises';
+
+// For streams (callback-based, but non-blocking)
+import { createReadStream, createWriteStream } from 'fs';
+```
+
+---
+
+## Reading Files
+
+### Read Entire File
+
+```javascript
+import { readFile } from 'fs/promises';
+
+// As string
+const content = await readFile('file.txt', 'utf8');
+console.log(content);
+
+// As buffer (binary)
+const buffer = await readFile('image.png');
+console.log(buffer.length); // Size in bytes
+```
+
+### Read Large Files with Streams
+
+```javascript
+import { createReadStream } from 'fs';
+
+const stream = createReadStream('large-file.log', {
+  encoding: 'utf8',
+  highWaterMark: 64 * 1024 // 64KB chunks
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk);
+}
+```
+
+---
+
+## Writing Files
+
+### Write Entire File
+
+```javascript
+import { writeFile } from 'fs/promises';
+
+// Write string
+await writeFile('output.txt', 'Hello, World!', 'utf8');
+
+// Write buffer
+const buffer = Buffer.from([0x48, 0x69]);
+await writeFile('binary.dat', buffer);
+
+// With options
+await writeFile('file.txt', 'data', {
+  encoding: 'utf8',
+  mode: 0o644,   // File permissions
+  flag: 'w'      // Write mode (overwrites)
+});
+```
+
+### Write Flags
+
+| Flag | Description |
+|------|-------------|
+| `'w'` | Write (create or overwrite) |
+| `'a'` | Append (create if doesn't exist) |
+| `'wx'` | Write, fail if exists |
+| `'ax'` | Append, fail if exists |
+| `'r+'` | Read and write |
+
+### Append to File
+
+```javascript
+import { appendFile } from 'fs/promises';
+
+await appendFile('log.txt', 'New log entry\n');
+```
+
+### Write Large Files with Streams
+
+```javascript
+import { createWriteStream } from 'fs';
+
+const stream = createWriteStream('output.txt');
+
+for (let i = 0; i < 1000000; i++) {
+  const canContinue = stream.write(`Line ${i}\n`);
+  if (!canContinue) {
+    await new Promise(resolve => stream.once('drain', resolve));
+  }
+}
+
+stream.end();
+await new Promise(resolve => stream.on('finish', resolve));
+```
+
+---
+
+## File Information
+
+### Check if File Exists
+
+```javascript
+import { access, constants } from 'fs/promises';
+
+async function exists(path) {
+  try {
+    await access(path, constants.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Check specific permissions
+await access(path, constants.R_OK); // Readable
+await access(path, constants.W_OK); // Writable
+await access(path, constants.X_OK); // Executable
+```
+
+### Get File Stats
+
+```javascript
+import { stat } from 'fs/promises';
+
+const stats = await stat('file.txt');
+
+console.log(stats.isFile());        // true
+console.log(stats.isDirectory());   // false
+console.log(stats.size);            // Size in bytes
+console.log(stats.mtime);           // Last modified time
+console.log(stats.birthtime);       // Creation time
+console.log(stats.mode);            // Permissions (octal)
+```
+
+### Stat Properties
+
+| Property | Description |
+|----------|-------------|
+| `size` | File size in bytes |
+| `mtime` | Last modification time |
+| `atime` | Last access time |
+| `ctime` | Last status change time |
+| `birthtime` | Creation time |
+| `mode` | File permissions |
+| `uid` | Owner user ID |
+| `gid` | Owner group ID |
+
+---
+
+## Directories
+
+### Create Directory
+
+```javascript
+import { mkdir } from 'fs/promises';
+
+// Create single directory
+await mkdir('new-folder');
+
+// Create nested directories
+await mkdir('path/to/nested/folder', { recursive: true });
+```
+
+### Read Directory Contents
+
+```javascript
+import { readdir } from 'fs/promises';
+
+// Simple list of names
+const files = await readdir('.');
+console.log(files); // ['file1.txt', 'folder', 'file2.js']
+
+// With file types
+const entries = await readdir('.', { withFileTypes: true });
+for (const entry of entries) {
+  if (entry.isFile()) {
+    console.log(`File: ${entry.name}`);
+  } else if (entry.isDirectory()) {
+    console.log(`Dir: ${entry.name}`);
+  }
+}
+```
+
+### Remove Directory
+
+```javascript
+import { rmdir, rm } from 'fs/promises';
+
+// Remove empty directory
+await rmdir('empty-folder');
+
+// Remove directory with contents
+await rm('folder', { recursive: true });
+
+// Force (ignore errors if doesn't exist)
+await rm('folder', { recursive: true, force: true });
+```
+
+### Recursive Directory Walk
+
+```javascript
+import { readdir, stat } from 'fs/promises';
+import { join } from 'path';
+
+async function* walkDir(dir) {
+  const entries = await readdir(dir, { withFileTypes: true });
+  
+  for (const entry of entries) {
+    const fullPath = join(dir, entry.name);
+    
+    if (entry.isDirectory()) {
+      yield* walkDir(fullPath);
+    } else {
+      yield fullPath;
+    }
+  }
+}
+
+// Usage
+for await (const file of walkDir('./src')) {
+  console.log(file);
+}
+```
+
+---
+
+## File Operations
+
+### Copy File
+
+```javascript
+import { copyFile, constants } from 'fs/promises';
+
+// Simple copy (overwrites if exists)
+await copyFile('source.txt', 'destination.txt');
+
+// Fail if destination exists
+await copyFile('source.txt', 'dest.txt', constants.COPYFILE_EXCL);
+```
+
+### Move/Rename File
+
+```javascript
+import { rename } from 'fs/promises';
+
+// Rename
+await rename('old-name.txt', 'new-name.txt');
+
+// Move
+await rename('file.txt', 'subfolder/file.txt');
+```
+
+### Delete File
+
+```javascript
+import { unlink, rm } from 'fs/promises';
+
+// Delete file
+await unlink('file.txt');
+
+// Or use rm (also works for directories)
+await rm('file.txt');
+```
+
+### Create Symlink
+
+```javascript
+import { symlink, readlink } from 'fs/promises';
+
+// Create symbolic link
+await symlink('target.txt', 'link.txt');
+
+// Read where a symlink points
+const target = await readlink('link.txt');
+console.log(target); // 'target.txt'
+```
+
+---
+
+## Watching Files
+
+### Watch for Changes
+
+```javascript
+import { watch } from 'fs/promises';
+
+const watcher = watch('.', { recursive: true });
+
+for await (const event of watcher) {
+  console.log(`${event.eventType}: ${event.filename}`);
+}
+```
+
+### Watch Options
+
+```javascript
+import { watch } from 'fs';
+
+const watcher = watch('file.txt', (eventType, filename) => {
+  console.log(`${eventType} on ${filename}`);
+});
+
+// Stop watching
+watcher.close();
+```
+
+---
+
+## Temporary Files
+
+### Create Temp Directory
+
+```javascript
+import { mkdtemp } from 'fs/promises';
+import { tmpdir } from 'os';
+import { join } from 'path';
+
+const tempDir = await mkdtemp(join(tmpdir(), 'myapp-'));
+console.log(tempDir); // '/tmp/myapp-abc123'
+
+// Clean up when done
+await rm(tempDir, { recursive: true });
+```
+
+---
+
+## Permissions
+
+### Change Permissions
+
+```javascript
+import { chmod } from 'fs/promises';
+
+// Make executable
+await chmod('script.sh', 0o755);
+
+// Read/write for owner only
+await chmod('secret.txt', 0o600);
+```
+
+### Common Permission Values
+
+| Octal | Meaning |
+|-------|---------|
+| `0o755` | rwxr-xr-x (executable, world-readable) |
+| `0o644` | rw-r--r-- (read/write owner, read others) |
+| `0o600` | rw------- (read/write owner only) |
+| `0o777` | rwxrwxrwx (full access, avoid!) |
+
+### Change Ownership
+
+```javascript
+import { chown } from 'fs/promises';
+
+await chown('file.txt', uid, gid);
+```
+
+---
+
+## Practical Examples
+
+### Read JSON File
+
+```javascript
+import { readFile } from 'fs/promises';
+
+async function readJSON(path) {
+  const content = await readFile(path, 'utf8');
+  return JSON.parse(content);
+}
+
+const config = await readJSON('config.json');
+```
+
+### Write JSON File
+
+```javascript
+import { writeFile } from 'fs/promises';
+
+async function writeJSON(path, data) {
+  const json = JSON.stringify(data, null, 2);
+  await writeFile(path, json, 'utf8');
+}
+
+await writeJSON('config.json', { port: 3000, debug: true });
+```
+
+### Safe File Write (Atomic)
+
+Write to a temp file first, then rename. Prevents data loss if the process crashes.
+
+```javascript
+import { writeFile, rename } from 'fs/promises';
+
+async function safeWrite(path, data) {
+  const tempPath = `${path}.tmp`;
+  await writeFile(tempPath, data);
+  await rename(tempPath, path);
+}
+```
+
+### Count Lines in File
+
+```javascript
+import { createReadStream } from 'fs';
+
+async function countLines(path) {
+  let count = 0;
+  const stream = createReadStream(path, { encoding: 'utf8' });
+  
+  for await (const chunk of stream) {
+    for (const char of chunk) {
+      if (char === '\n') count++;
+    }
+  }
+  
+  return count;
+}
+```
+
+### Find Files by Extension
+
+```javascript
+import { readdir } from 'fs/promises';
+import { join, extname } from 'path';
+
+async function findByExtension(dir, ext) {
+  const results = [];
+  const entries = await readdir(dir, { withFileTypes: true });
+  
+  for (const entry of entries) {
+    const fullPath = join(dir, entry.name);
+    
+    if (entry.isDirectory()) {
+      results.push(...await findByExtension(fullPath, ext));
+    } else if (extname(entry.name) === ext) {
+      results.push(fullPath);
+    }
+  }
+  
+  return results;
+}
+
+const jsFiles = await findByExtension('./src', '.js');
+```
+
+---
+
+## Error Handling
+
+Common error codes:
+
+| Code | Meaning |
+|------|---------|
+| `ENOENT` | File or directory not found |
+| `EEXIST` | File already exists |
+| `EACCES` | Permission denied |
+| `EISDIR` | Expected file, got directory |
+| `ENOTDIR` | Expected directory, got file |
+| `ENOTEMPTY` | Directory not empty |
+
+```javascript
+import { readFile } from 'fs/promises';
+
+try {
+  const content = await readFile('missing.txt', 'utf8');
+} catch (err) {
+  if (err.code === 'ENOENT') {
+    console.log('File not found');
+  } else if (err.code === 'EACCES') {
+    console.log('Permission denied');
+  } else {
+    throw err;
+  }
+}
+```
+
+---
+
+## Quick Reference
+
+| Task | Code |
+|------|------|
+| Read file | `await readFile(path, 'utf8')` |
+| Write file | `await writeFile(path, data)` |
+| Append to file | `await appendFile(path, data)` |
+| Delete file | `await unlink(path)` |
+| File exists | `await access(path).then(() => true).catch(() => false)` |
+| File info | `await stat(path)` |
+| Create directory | `await mkdir(path, { recursive: true })` |
+| Read directory | `await readdir(path, { withFileTypes: true })` |
+| Delete directory | `await rm(path, { recursive: true })` |
+| Copy file | `await copyFile(src, dest)` |
+| Move/Rename | `await rename(oldPath, newPath)` |
+

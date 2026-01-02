@@ -1,0 +1,497 @@
+---
+title: Streams
+description: Understanding Node.js streams for efficient data processing
+---
+
+## What Are Streams?
+
+Streams are a way to handle data piece by piece, instead of loading everything into memory at once. They're like a conveyor belt that moves data through your application.
+
+**Without streams:**
+```javascript
+// Load entire 2GB file into memory
+const data = await fs.readFile('huge-video.mp4');
+// Process it (requires 2GB+ RAM)
+```
+
+**With streams:**
+```javascript
+// Process in small chunks (only ~64KB in memory at a time)
+const stream = fs.createReadStream('huge-video.mp4');
+stream.on('data', (chunk) => {
+  // Process each chunk
+});
+```
+
+---
+
+## Why Use Streams?
+
+| Aspect | Without Streams | With Streams |
+|--------|-----------------|--------------|
+| Memory | Entire file in RAM | Only current chunk |
+| Start time | Wait for full load | Start immediately |
+| Large files | May crash (OOM) | Handles any size |
+| Network | Wait for download | Process while downloading |
+
+Streams are essential when:
+- Working with large files
+- Handling network data
+- Processing real-time input
+- Memory is limited
+
+---
+
+## The Four Stream Types
+
+Node.js has four fundamental stream types:
+
+| Type | Purpose | Example |
+|------|---------|---------|
+| Readable | Source of data | `fs.createReadStream()`, `http.IncomingMessage` |
+| Writable | Destination for data | `fs.createWriteStream()`, `http.ServerResponse` |
+| Duplex | Both readable and writable | `net.Socket`, `crypto.Cipher` |
+| Transform | Modify data as it passes through | `zlib.createGzip()`, `crypto.createHash()` |
+
+---
+
+## Readable Streams
+
+Readable streams are sources of data. Data flows out of them.
+
+### Creating a Readable Stream
+
+```javascript
+import { createReadStream } from 'fs';
+
+const readable = createReadStream('large-file.txt', {
+  encoding: 'utf8',      // Return strings instead of buffers
+  highWaterMark: 16384   // Chunk size in bytes (default: 64KB for files)
+});
+```
+
+### Consuming Data: Event-Based (Flowing Mode)
+
+```javascript
+readable.on('data', (chunk) => {
+  console.log(`Received ${chunk.length} bytes`);
+});
+
+readable.on('end', () => {
+  console.log('No more data');
+});
+
+readable.on('error', (err) => {
+  console.error('Stream error:', err);
+});
+```
+
+When you attach a `data` listener, the stream starts flowing automatically.
+
+### Consuming Data: Pull-Based (Paused Mode)
+
+```javascript
+readable.on('readable', () => {
+  let chunk;
+  while ((chunk = readable.read()) !== null) {
+    console.log(`Read ${chunk.length} bytes`);
+  }
+});
+```
+
+### Controlling Flow
+
+```javascript
+readable.on('data', (chunk) => {
+  // Pause the stream
+  readable.pause();
+  
+  processChunk(chunk).then(() => {
+    // Resume when ready
+    readable.resume();
+  });
+});
+```
+
+---
+
+## Writable Streams
+
+Writable streams are destinations for data. Data flows into them.
+
+### Creating a Writable Stream
+
+```javascript
+import { createWriteStream } from 'fs';
+
+const writable = createWriteStream('output.txt', {
+  encoding: 'utf8',
+  highWaterMark: 16384  // Buffer size before backpressure
+});
+```
+
+### Writing Data
+
+```javascript
+// Write returns false if internal buffer is full (backpressure)
+const canContinue = writable.write('Hello, ');
+writable.write('World!\n');
+
+// Signal that you're done writing
+writable.end('Final data');
+
+// Events
+writable.on('finish', () => {
+  console.log('All data written');
+});
+
+writable.on('error', (err) => {
+  console.error('Write error:', err);
+});
+```
+
+### Handling Backpressure
+
+Backpressure occurs when data is written faster than it can be consumed.
+
+```javascript
+function writeData(writable, data) {
+  for (const item of data) {
+    const canContinue = writable.write(item);
+    
+    if (!canContinue) {
+      // Wait for buffer to drain
+      await new Promise(resolve => writable.once('drain', resolve));
+    }
+  }
+  
+  writable.end();
+}
+```
+
+---
+
+## Piping Streams
+
+The simplest way to connect streams. Pipe handles backpressure automatically.
+
+```javascript
+import { createReadStream, createWriteStream } from 'fs';
+
+const source = createReadStream('input.txt');
+const destination = createWriteStream('output.txt');
+
+// Connect them
+source.pipe(destination);
+
+// With error handling
+source.on('error', handleError);
+destination.on('error', handleError);
+```
+
+### Chaining Pipes
+
+```javascript
+import { createReadStream, createWriteStream } from 'fs';
+import { createGzip } from 'zlib';
+
+createReadStream('input.txt')
+  .pipe(createGzip())              // Compress
+  .pipe(createWriteStream('input.txt.gz'));
+```
+
+### Using pipeline() for Better Error Handling
+
+The `pipeline()` function properly handles errors and cleanup:
+
+```javascript
+import { pipeline } from 'stream/promises';
+import { createReadStream, createWriteStream } from 'fs';
+import { createGzip } from 'zlib';
+
+try {
+  await pipeline(
+    createReadStream('input.txt'),
+    createGzip(),
+    createWriteStream('input.txt.gz')
+  );
+  console.log('Compression complete');
+} catch (err) {
+  console.error('Pipeline failed:', err);
+}
+```
+
+---
+
+## Transform Streams
+
+Transform streams modify data as it passes through.
+
+### Using Built-in Transforms
+
+```javascript
+import { createGzip, createGunzip } from 'zlib';
+import { createHash } from 'crypto';
+
+// Compression
+readStream.pipe(createGzip()).pipe(writeStream);
+
+// Decompression
+readStream.pipe(createGunzip()).pipe(writeStream);
+
+// Hashing
+const hash = createHash('sha256');
+readStream.pipe(hash);
+hash.on('finish', () => {
+  console.log(hash.digest('hex'));
+});
+```
+
+### Creating Custom Transform Streams
+
+```javascript
+import { Transform } from 'stream';
+
+const upperCaseTransform = new Transform({
+  transform(chunk, encoding, callback) {
+    const upperCased = chunk.toString().toUpperCase();
+    callback(null, upperCased);
+  }
+});
+
+createReadStream('input.txt')
+  .pipe(upperCaseTransform)
+  .pipe(createWriteStream('output.txt'));
+```
+
+### Line-by-Line Processing
+
+```javascript
+import { Transform } from 'stream';
+
+const lineTransform = new Transform({
+  objectMode: true,
+  
+  transform(chunk, encoding, callback) {
+    const lines = chunk.toString().split('\n');
+    for (const line of lines) {
+      if (line.trim()) {
+        this.push({ line: line.trim(), timestamp: Date.now() });
+      }
+    }
+    callback();
+  }
+});
+```
+
+---
+
+## Duplex Streams
+
+Duplex streams are both readable and writable, but the two sides are independent.
+
+```javascript
+import { Duplex } from 'stream';
+
+const duplex = new Duplex({
+  read(size) {
+    // Produce data
+    this.push('data');
+    this.push(null); // End
+  },
+  
+  write(chunk, encoding, callback) {
+    // Consume data
+    console.log('Received:', chunk.toString());
+    callback();
+  }
+});
+```
+
+Common duplex streams:
+- TCP sockets (`net.Socket`)
+- WebSocket connections
+- Crypto cipher/decipher
+
+---
+
+## Stream Events Reference
+
+### Readable Stream Events
+
+| Event | Description |
+|-------|-------------|
+| `data` | Chunk of data available |
+| `end` | No more data to consume |
+| `error` | An error occurred |
+| `close` | Stream has been closed |
+| `readable` | Data is available to read |
+
+### Writable Stream Events
+
+| Event | Description |
+|-------|-------------|
+| `drain` | Safe to write again after backpressure |
+| `finish` | All data has been flushed |
+| `error` | An error occurred |
+| `close` | Stream has been closed |
+| `pipe` | A readable stream piped to this |
+
+---
+
+## Practical Examples
+
+### Copy a File
+
+```javascript
+import { createReadStream, createWriteStream } from 'fs';
+import { pipeline } from 'stream/promises';
+
+async function copyFile(source, destination) {
+  await pipeline(
+    createReadStream(source),
+    createWriteStream(destination)
+  );
+}
+```
+
+### Compress a File
+
+```javascript
+import { createReadStream, createWriteStream } from 'fs';
+import { createGzip } from 'zlib';
+import { pipeline } from 'stream/promises';
+
+async function compressFile(input, output) {
+  await pipeline(
+    createReadStream(input),
+    createGzip(),
+    createWriteStream(output)
+  );
+}
+
+await compressFile('large.log', 'large.log.gz');
+```
+
+### HTTP Response Streaming
+
+```javascript
+import { createReadStream } from 'fs';
+import http from 'http';
+
+const server = http.createServer((req, res) => {
+  if (req.url === '/video') {
+    const stream = createReadStream('video.mp4');
+    res.setHeader('Content-Type', 'video/mp4');
+    stream.pipe(res);
+  }
+});
+```
+
+### Process Large CSV
+
+```javascript
+import { createReadStream } from 'fs';
+import { Transform } from 'stream';
+
+let lineBuffer = '';
+let lineCount = 0;
+
+const csvProcessor = new Transform({
+  transform(chunk, encoding, callback) {
+    lineBuffer += chunk.toString();
+    const lines = lineBuffer.split('\n');
+    lineBuffer = lines.pop(); // Keep incomplete line
+    
+    for (const line of lines) {
+      lineCount++;
+      const columns = line.split(',');
+      // Process each row
+      this.push(JSON.stringify({ row: lineCount, data: columns }) + '\n');
+    }
+    callback();
+  },
+  
+  flush(callback) {
+    if (lineBuffer) {
+      lineCount++;
+      const columns = lineBuffer.split(',');
+      this.push(JSON.stringify({ row: lineCount, data: columns }) + '\n');
+    }
+    callback();
+  }
+});
+
+createReadStream('data.csv')
+  .pipe(csvProcessor)
+  .pipe(createWriteStream('processed.jsonl'));
+```
+
+---
+
+## Object Mode
+
+By default, streams work with strings and buffers. Object mode allows streaming any JavaScript value.
+
+```javascript
+import { Transform, Readable, Writable } from 'stream';
+
+// Readable that emits objects
+const objectSource = new Readable({
+  objectMode: true,
+  read() {
+    this.push({ name: 'Alice', age: 30 });
+    this.push({ name: 'Bob', age: 25 });
+    this.push(null);
+  }
+});
+
+// Transform that filters objects
+const filter = new Transform({
+  objectMode: true,
+  transform(obj, encoding, callback) {
+    if (obj.age >= 30) {
+      this.push(obj);
+    }
+    callback();
+  }
+});
+
+objectSource.pipe(filter).on('data', (obj) => {
+  console.log(obj); // { name: 'Alice', age: 30 }
+});
+```
+
+---
+
+## Async Iteration
+
+Modern Node.js supports `for await...of` with readable streams:
+
+```javascript
+import { createReadStream } from 'fs';
+
+const stream = createReadStream('file.txt', { encoding: 'utf8' });
+
+for await (const chunk of stream) {
+  console.log(chunk);
+}
+```
+
+This is cleaner than event-based handling for simple cases.
+
+---
+
+## Quick Reference
+
+| Task | Code |
+|------|------|
+| Read file as stream | `createReadStream(path)` |
+| Write file as stream | `createWriteStream(path)` |
+| Connect streams | `readable.pipe(writable)` |
+| Chain with error handling | `pipeline(a, b, c)` |
+| Compress | `pipe(createGzip())` |
+| Decompress | `pipe(createGunzip())` |
+| Transform data | `new Transform({ transform(chunk, enc, cb) {...} })` |
+| Object mode | `new Readable({ objectMode: true, ... })` |
+

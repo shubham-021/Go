@@ -1,0 +1,276 @@
+---
+title: LangGraph
+description: Building stateful, multi-step AI workflows with graphs
+---
+
+## What is LangGraph?
+
+LangGraph is a library for building stateful, multi-actor applications with LLMs. While LangChain handles linear chains, LangGraph handles complex workflows with:
+
+- Cycles and loops
+- Conditional branching
+- State management
+- Human-in-the-loop
+- Persistence
+
+**Core idea:** Model your application as a graph where nodes are functions and edges define the flow.
+
+---
+
+## When to Use LangGraph
+
+| Use LangGraph | Use Simple Chains |
+|---------------|-------------------|
+| Multi-step workflows | Single prompt/response |
+| Conditional logic | Linear pipelines |
+| Loops/iterations | No backtracking |
+| State across steps | Stateless processing |
+| Human approval steps | Fully automated |
+
+---
+
+## Core Concepts
+
+### Graph Structure
+
+```
+START → Node A → [Conditional] → Node B → END
+                       ↓
+                    Node C → Node B → END
+```
+
+### Nodes
+
+Nodes are Python functions that process and return state.
+
+```python
+def process_query(state):
+    # Do something with state
+    return {"messages": state["messages"] + [new_message]}
+```
+
+### Edges
+
+Edges connect nodes and define the flow.
+
+```python
+# Simple edge: A always goes to B
+graph.add_edge("node_a", "node_b")
+```
+
+### Conditional Edges
+
+Route to different nodes based on conditions.
+
+```python
+def router(state):
+    if state["needs_approval"]:
+        return "human_review"
+    return "auto_process"
+
+graph.add_conditional_edges(
+    "classifier",
+    router,
+    {
+        "human_review": "human_node",
+        "auto_process": "process_node"
+    }
+)
+```
+
+### Special Nodes
+
+| Node | Purpose |
+|------|---------|
+| `START` | Entry point of the graph |
+| `END` | Terminal node, stops execution |
+
+---
+
+## State
+
+State is a TypedDict or Pydantic model that flows through the graph.
+
+```python
+from typing import TypedDict, Annotated
+from langgraph.graph import add_messages
+
+class State(TypedDict):
+    messages: Annotated[list, add_messages]
+    user_query: str
+    context: list
+```
+
+Each node receives the current state and returns updates to it.
+
+---
+
+## Building a Graph
+
+```python
+from langgraph.graph import StateGraph, START, END
+from typing import TypedDict
+
+# Define state
+class State(TypedDict):
+    input: str
+    output: str
+
+# Define nodes
+def step_one(state):
+    return {"output": f"Processed: {state['input']}"}
+
+def step_two(state):
+    return {"output": state["output"].upper()}
+
+# Build graph
+graph = StateGraph(State)
+
+# Add nodes
+graph.add_node("step_one", step_one)
+graph.add_node("step_two", step_two)
+
+# Add edges
+graph.add_edge(START, "step_one")
+graph.add_edge("step_one", "step_two")
+graph.add_edge("step_two", END)
+
+# Compile
+app = graph.compile()
+
+# Run
+result = app.invoke({"input": "hello"})
+# {"input": "hello", "output": "PROCESSED: HELLO"}
+```
+
+---
+
+## Conditional Routing
+
+```python
+def should_continue(state):
+    if state["iteration"] < 3:
+        return "continue"
+    return "end"
+
+graph.add_conditional_edges(
+    "process",
+    should_continue,
+    {
+        "continue": "process",  # Loop back
+        "end": END
+    }
+)
+```
+
+---
+
+## Checkpointing
+
+Save and restore graph state for:
+- Debugging
+- Human-in-the-loop
+- Long-running workflows
+- Fault tolerance
+
+```python
+from langgraph.checkpoint.memory import MemorySaver
+
+memory = MemorySaver()
+app = graph.compile(checkpointer=memory)
+
+# Run with thread ID
+config = {"configurable": {"thread_id": "user-123"}}
+result = app.invoke({"input": "hello"}, config)
+
+# Later, resume from checkpoint
+history = app.get_state(config)
+```
+
+---
+
+## Human-in-the-Loop
+
+Pause execution for human input.
+
+```python
+from langgraph.graph import interrupt
+
+def human_review(state):
+    # This pauses execution
+    feedback = interrupt("Please review this output")
+    return {"human_feedback": feedback}
+
+# When running:
+# 1. Graph pauses at human_review
+# 2. Human provides feedback via API
+# 3. Graph resumes with feedback in state
+```
+
+---
+
+## Common Patterns
+
+### ReAct Agent
+
+```
+START → Think → [Has Action?] → Act → Observe → Think → ...
+                     ↓ No
+                    END
+```
+
+The agent thinks, decides on an action, executes it, observes the result, and repeats.
+
+### Multi-Agent
+
+```
+START → Supervisor → [Route] → Agent A → Supervisor → ...
+                          ↓
+                     Agent B → Supervisor → ...
+```
+
+A supervisor routes tasks to specialized agents.
+
+---
+
+## Python Type Hints
+
+LangGraph uses Python type hints extensively:
+
+```python
+from typing import TypedDict
+from pydantic import BaseModel
+
+# TypedDict for simple state
+class State(TypedDict):
+    messages: list
+    current_step: str
+
+# Pydantic for validation
+class ValidatedState(BaseModel):
+    messages: list[str]
+    score: float
+```
+
+---
+
+## Debugging
+
+### Visualization
+
+```python
+# Get graph representation
+print(app.get_graph().draw_mermaid())
+```
+
+### Streaming
+
+```python
+for event in app.stream({"input": "hello"}):
+    print(event)
+```
+
+### Tracing
+
+Use LangSmith for visibility into graph execution.
+

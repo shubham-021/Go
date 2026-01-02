@@ -1,0 +1,160 @@
+---
+title: Knowledge Graphs and Memory
+description: Using graph databases and memory systems for enhanced AI applications
+---
+
+## Knowledge Graphs
+
+### What is a Knowledge Graph?
+
+A knowledge graph stores information as entities (nodes) and relationships (edges), rather than tables or documents.
+
+```
+[Person: Alice] --works_at--> [Company: Acme]
+[Person: Alice] --knows--> [Person: Bob]
+[Company: Acme] --located_in--> [City: NYC]
+```
+
+### Why Use Knowledge Graphs for GenAI?
+
+| RAG with Documents | RAG with Knowledge Graph |
+|-------------------|-------------------------|
+| Finds similar text chunks | Traverses relationships |
+| Context from single chunks | Multi-hop reasoning |
+| Semantic similarity | Structured queries |
+| Flat data | Connected data |
+
+### Neo4j
+
+The most popular graph database. Uses Cypher query language.
+
+**Basic Cypher:**
+```cypher
+// Find Alice's coworkers
+MATCH (alice:Person {name: "Alice"})-[:works_at]->(company)<-[:works_at]-(coworker)
+RETURN coworker.name
+```
+
+**With LangChain:**
+```python
+from langchain_community.graphs import Neo4jGraph
+
+graph = Neo4jGraph(url="bolt://localhost:7687", username="neo4j", password="...")
+
+# Query
+result = graph.query("MATCH (n) RETURN n LIMIT 10")
+```
+
+### Graph + RAG
+
+Combine structured graph queries with unstructured vector search:
+
+1. Extract entities from user query
+2. Query graph for related entities and relationships
+3. Use graph context + vector search results
+4. Generate answer with combined context
+
+---
+
+## Memory Systems
+
+### The Memory Problem
+
+LLMs have no memory between conversations. Each request is independent.
+
+```
+User: My name is Alice.
+AI: Nice to meet you, Alice!
+
+[New session]
+User: What's my name?
+AI: I don't know your name. (Memory lost)
+```
+
+### Types of Memory
+
+| Type | Duration | Use Case |
+|------|----------|----------|
+| Short-term | Within conversation | Current chat context |
+| Long-term | Across conversations | User preferences, history |
+| Semantic | Permanent | Facts about users/topics |
+| Episodic | Permanent | Specific past interactions |
+
+---
+
+## Mem0
+
+An intelligent memory layer for AI applications.
+
+**What it does:**
+- Automatically extracts important information from conversations
+- Stores memories with context and timestamps
+- Retrieves relevant memories for new conversations
+- Updates/consolidates memories over time
+
+**Installation:**
+```bash
+pip install mem0ai
+```
+
+**Basic usage:**
+```python
+from mem0 import Memory
+
+m = Memory()
+
+# Add memories from conversation
+m.add("User prefers dark mode and uses Python", user_id="alice")
+
+# Retrieve relevant memories
+memories = m.search("What programming languages does the user know?", user_id="alice")
+```
+
+**How Mem0 works:**
+
+1. **Extraction:** Parses conversations for memorable information
+2. **Storage:** Stores memories in vector DB with metadata
+3. **Retrieval:** Finds relevant memories for context
+4. **Updating:** Consolidates and updates conflicting memories
+
+**Usage with LLM:**
+```python
+# 1. Retrieve relevant memories
+memories = m.search(user_query, user_id=user_id)
+
+# 2. Include in context
+context = "User info: " + "\n".join([mem["text"] for mem in memories])
+
+# 3. Generate response with context
+response = llm(context + "\n\nQuery: " + user_query)
+
+# 4. Add new memories from response
+m.add(user_query + " " + response, user_id=user_id)
+```
+
+---
+
+## Comparison
+
+| Approach | Best For |
+|----------|----------|
+| Knowledge Graph | Structured relationships, multi-hop queries |
+| Vector Memory | Semantic similarity, unstructured memories |
+| Mem0 | Automatic memory management, personalization |
+
+---
+
+## When to Use What
+
+**Knowledge Graphs:**
+- Product catalogs with complex relationships
+- Organizational structures
+- Scientific knowledge bases
+- Question answering requiring reasoning
+
+**Memory Systems (Mem0):**
+- Personalized assistants
+- Customer support with history
+- Long-running conversations
+- User preference tracking
+

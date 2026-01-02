@@ -1,0 +1,344 @@
+---
+title: Prompting
+description: Understanding prompt formats, system prompts, and prompting techniques for LLMs
+---
+
+## What is a Prompt?
+
+A prompt is the input you give to an LLM. How you structure this input significantly affects the quality of the output.
+
+Prompting is both an art and a science. The same question phrased differently can yield vastly different responses.
+
+---
+
+## Prompt Formats
+
+Different models expect prompts in different formats. Using the wrong format leads to poor results because the model was trained with a specific structure.
+
+### Alpaca Format
+
+Used by early instruction-tuned models. Simple and readable.
+
+```
+### Instruction:
+Summarize the following text in 3 bullet points.
+
+### Input:
+[Your text here]
+
+### Response:
+```
+
+The model generates text after `### Response:`.
+
+### INST Format (LLaMA 2)
+
+Used by LLaMA 2 and derivatives. Uses special tokens for structure.
+
+```
+<s>[INST] <<SYS>>
+You are a helpful assistant.
+<</SYS>>
+
+What is the capital of France? [/INST]
+```
+
+| Token | Purpose |
+|-------|---------|
+| `<s>` | Start of sequence |
+| `[INST]...[/INST]` | Wraps user message |
+| `<<SYS>>...<</SYS>>` | Wraps system prompt |
+| `</s>` | End of sequence |
+
+### ChatML (OpenAI)
+
+Used by OpenAI models and many others. JSON-based structure.
+
+```python
+messages = [
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "What is the capital of France?"},
+    {"role": "assistant", "content": "The capital of France is Paris."},
+    {"role": "user", "content": "What's the population?"}
+]
+```
+
+| Role | Purpose |
+|------|---------|
+| `system` | Sets behavior, personality, constraints |
+| `user` | The human's messages |
+| `assistant` | The model's previous responses |
+
+### Why Format Matters
+
+The model was **trained** on one specific format. During training, it learned:
+- `[INST]` means "user is asking something"
+- `<<SYS>>` means "these are my instructions"
+
+Using the wrong format is like speaking a different language. The model might still respond, but with degraded quality.
+
+---
+
+## System Prompts
+
+### What is a System Prompt?
+
+A system prompt is a special instruction that defines how the model should behave. It sets the context, personality, and constraints **before** any user interaction.
+
+### Why System Prompts Are Powerful
+
+Without system prompt:
+```
+User: What's 2 + 2?
+Model: 4
+```
+
+With system prompt ("You are a math tutor who explains step-by-step"):
+```
+User: What's 2 + 2?
+Model: Let me walk you through this:
+- We have 2 items
+- We add 2 more items
+- Counting them all: 1, 2, 3, 4
+- Therefore, 2 + 2 = 4
+```
+
+### Anatomy of a Good System Prompt
+
+```python
+system_prompt = """
+You are an AI assistant specialized in mathematics.
+You should not answer any query that is not related to math.
+
+For a given query, help the user solve it with explanation.
+
+Example:
+Input: 2 + 2
+Output: 2 + 2 is 4, calculated by adding 2 with 2.
+
+Input: Why is the sky blue?
+Output: I can only help with math questions. Please ask a math-related question.
+"""
+```
+
+**Components:**
+1. **Role definition**: "You are an AI assistant specialized in..."
+2. **Constraints**: "You should not answer..."
+3. **Instructions**: "For a given query, help..."
+4. **Examples**: Show expected input/output pairs
+
+### Using System Prompts (Gemini Example)
+
+```python
+from google import genai
+from google.genai import types
+
+client = genai.Client()
+
+response = client.models.generate_content(
+    model='gemini-2.0-flash-001',
+    contents="What is 2 + 2?",
+    config=types.GenerateContentConfig(
+        system_instruction=system_prompt
+    )
+)
+```
+
+---
+
+## Prompting Techniques
+
+### Zero-Shot Prompting
+
+Ask the model to perform a task without any examples.
+
+```
+Classify the sentiment of this review as positive, negative, or neutral:
+"The food was okay, nothing special."
+```
+
+**When to use:** Simple tasks the model likely knows how to do.
+
+**Limitation:** Model might not understand exactly what format you want.
+
+### Few-Shot Prompting
+
+Provide examples before asking the actual question.
+
+```
+Classify the sentiment:
+
+Review: "Best restaurant ever!"
+Sentiment: Positive
+
+Review: "Terrible service, never going back."
+Sentiment: Negative
+
+Review: "The food was okay, nothing special."
+Sentiment:
+```
+
+**When to use:** When you need specific output format or the task is nuanced.
+
+**Why it works:** The model learns the pattern from examples and applies it.
+
+### Chain-of-Thought (CoT)
+
+Ask the model to reason step-by-step before giving an answer.
+
+```
+Q: If a store has 15 apples and sells 7, then receives a shipment of 12 more, 
+how many apples does it have?
+
+A: Let me think step by step:
+1. Start with 15 apples
+2. Sell 7 apples: 15 - 7 = 8 apples
+3. Receive 12 more: 8 + 12 = 20 apples
+Therefore, the store has 20 apples.
+```
+
+**When to use:** Complex reasoning, math problems, multi-step logic.
+
+**Why it works:** Forces the model to show its work, reducing errors. The model "thinks out loud."
+
+**Magic phrase:** Add "Let's think step by step" to trigger this behavior.
+
+### Self-Consistency Prompting
+
+Generate multiple responses using Chain-of-Thought, then take the majority answer.
+
+```
+Ask the same question 5 times with temperature > 0
+→ Get 5 different reasoning chains
+→ 4 say the answer is 42, 1 says 41
+→ Final answer: 42
+```
+
+**When to use:** Critical calculations where accuracy matters.
+
+**Why it works:** Random errors in one chain get outvoted by correct chains.
+
+### Persona-Based Prompting
+
+Ask the model to adopt a specific persona.
+
+```
+You are a senior Python developer with 15 years of experience in building 
+scalable systems. Review this code and point out any issues.
+```
+
+**When to use:** When expertise perspective matters.
+
+**Common personas:**
+- "You are an expert in..."
+- "You are a helpful teacher who..."
+- "You are a critical reviewer who..."
+
+### Role-Play Prompting
+
+Similar to persona, but for interactive scenarios.
+
+```
+You are a customer service representative for a bank. 
+The customer is upset about a fee. Handle the situation professionally.
+
+Customer: I can't believe you charged me $35 for overdraft!
+```
+
+**When to use:** Training simulations, creative writing, testing scenarios.
+
+### Contextual Prompting
+
+Provide relevant background information before the task.
+
+```
+Context: Our company sells eco-friendly water bottles. Our target audience 
+is environmentally conscious millennials. Our brand voice is casual but 
+informative.
+
+Task: Write a product description for our new insulated bottle.
+```
+
+**When to use:** Domain-specific tasks where context significantly changes the output.
+
+### Multimodal Prompting
+
+Combine text with images, audio, or video.
+
+```python
+response = model.generate_content([
+    "What's in this image?",
+    image_data
+])
+```
+
+**When to use:** Vision tasks, document analysis, video understanding.
+
+---
+
+## Prompting Best Practices
+
+### Be Specific
+
+```
+# Vague
+Write about dogs.
+
+# Specific
+Write a 200-word article about the health benefits of owning a dog, 
+targeting first-time pet owners.
+```
+
+### Define Output Format
+
+```
+# Unclear
+List some programming languages.
+
+# Clear
+List 5 programming languages in a numbered list, with one sentence 
+describing each language's main use case.
+```
+
+### Provide Constraints
+
+```
+You are a technical writer. 
+- Use simple language (8th grade reading level)
+- Avoid jargon
+- Include practical examples
+- Keep explanations under 100 words
+```
+
+### Use Delimiters
+
+Separate sections clearly:
+
+```
+Summarize the following text:
+"""
+[Your text here]
+"""
+```
+
+Or:
+```
+<document>
+[Your text here]
+</document>
+
+Summarize the above document.
+```
+
+---
+
+## Common Mistakes
+
+| Mistake | Problem | Fix |
+|---------|---------|-----|
+| Too vague | Model guesses what you want | Be specific |
+| No examples | Model uses wrong format | Add few-shot examples |
+| Too many instructions | Model gets confused | Prioritize, simplify |
+| Wrong format | Model trained differently | Use model's expected format |
+| No constraints | Output too long/off-topic | Set clear boundaries |
+

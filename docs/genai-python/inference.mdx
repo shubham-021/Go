@@ -1,0 +1,325 @@
+---
+title: Inference and Transformers Library
+description: Running LLM inference locally using Hugging Face Transformers and Ollama
+---
+
+## What is Inference?
+
+**Inference** is the process of using a trained model to generate outputs. During inference, the model weights are frozen (not learning), and you're simply running input through the model to get predictions.
+
+| Phase | Weights | Purpose |
+|-------|---------|---------|
+| Training | Updated | Model learns from data |
+| Inference | Frozen | Model generates outputs |
+
+---
+
+## Inference Options
+
+| Approach | Description | When to Use |
+|----------|-------------|-------------|
+| API (OpenAI, Google) | Model runs on provider's servers | Production, simplest setup |
+| Local (Ollama) | Model runs on your machine | Privacy, offline, experimentation |
+| Hugging Face Transformers | Direct model loading and control | Research, fine-tuning, customization |
+
+---
+
+## Ollama
+
+A tool for running LLMs locally with a simple interface.
+
+**Installation:** Download from ollama.com
+
+**Basic usage:**
+```bash
+# Download and run a model
+ollama run llama2
+
+# Pull a model without running
+ollama pull mistral
+
+# List downloaded models
+ollama list
+```
+
+**Why Ollama:**
+- Simple one-command setup
+- Automatic GPU detection
+- API compatible with OpenAI format
+- Good for local development and privacy
+
+---
+
+## Hugging Face Hub
+
+A repository for models, datasets, and spaces. Like GitHub for machine learning.
+
+**Creating a Token:**
+1. Go to huggingface.co
+2. Settings → Access Tokens
+3. Create a new token with read access
+4. Some models require accepting license agreements on the model page
+
+**Setting the Token:**
+```python
+import os
+os.environ["HF_TOKEN"] = "your_token_here"
+```
+
+Or use the CLI:
+```bash
+huggingface-cli login
+```
+
+---
+
+## Transformers Library
+
+The `transformers` library from Hugging Face provides easy access to thousands of pre-trained models.
+
+**Installation:**
+```bash
+pip install transformers torch
+```
+
+### Loading a Tokenizer
+
+The tokenizer converts text to tokens and back.
+
+```python
+from transformers import AutoTokenizer
+
+model_name = "google/gemma-3-1b-it"
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+```
+
+**Tokenizing text:**
+```python
+# Tokenize a string
+result = tokenizer("Hello, how are you?")
+print(result)
+# {'input_ids': [2, 9259, 236764, 1217, 659, 611, 236881], 
+#  'attention_mask': [1, 1, 1, 1, 1, 1, 1]}
+```
+
+| Field | Purpose |
+|-------|---------|
+| `input_ids` | Token IDs fed to the model |
+| `attention_mask` | Which tokens to attend to (1) vs ignore (0) |
+
+**Get just the token IDs:**
+```python
+tokens = tokenizer("Hello, how are you?")["input_ids"]
+# [2, 9259, 236764, 1217, 659, 611, 236881]
+```
+
+**Decode tokens back to text:**
+```python
+text = tokenizer.decode(tokens)
+# "Hello, how are you?"
+```
+
+**Vocabulary size:**
+```python
+print(len(tokenizer.get_vocab()))  # e.g., 256000
+```
+
+### Loading a Model
+
+`AutoModelForCausalLM` loads a model for text generation (next token prediction).
+
+```python
+from transformers import AutoModelForCausalLM
+import torch
+
+model = AutoModelForCausalLM.from_pretrained(
+    model_name,
+    torch_dtype=torch.bfloat16  # Use less memory
+)
+```
+
+**Data types:**
+
+| dtype | Memory | Precision | Use Case |
+|-------|--------|-----------|----------|
+| float32 | Most | Highest | Training |
+| float16 | Half | Good | Inference |
+| bfloat16 | Half | Better for large values | Preferred for LLMs |
+| int8/int4 | Least | Lower | Quantized models |
+
+### Using Pipelines
+
+Pipelines provide a high-level interface that handles tokenization and decoding automatically.
+
+```python
+from transformers import pipeline
+
+generator = pipeline(
+    "text-generation",
+    model=model,
+    tokenizer=tokenizer
+)
+
+output = generator("Hey there", max_new_tokens=25)
+print(output[0]['generated_text'])
+```
+
+**Common pipeline tasks:**
+
+| Task | Pipeline Name |
+|------|---------------|
+| Text generation | `"text-generation"` |
+| Question answering | `"question-answering"` |
+| Summarization | `"summarization"` |
+| Translation | `"translation"` |
+| Sentiment analysis | `"sentiment-analysis"` |
+
+### Generation Parameters
+
+Control how the model generates text:
+
+```python
+output = generator(
+    "Once upon a time",
+    max_new_tokens=100,   # Maximum tokens to generate
+    temperature=0.7,      # Randomness (0 = deterministic, 1 = creative)
+    top_p=0.9,            # Nucleus sampling threshold
+    top_k=50,             # Only consider top K tokens
+    do_sample=True,       # Enable sampling (vs greedy)
+    repetition_penalty=1.1 # Penalize repeated tokens
+)
+```
+
+| Parameter | Effect |
+|-----------|--------|
+| `temperature` | Higher = more random, lower = more focused |
+| `top_p` | Only sample from tokens comprising this probability mass |
+| `top_k` | Only consider the top K most likely tokens |
+| `do_sample` | If False, always pick the most likely token |
+
+---
+
+## Chat Templates
+
+Modern chat models expect a specific format for conversations. Chat templates automatically format your messages correctly.
+
+```python
+messages = [
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "What is Python?"}
+]
+
+# Apply the model's chat template
+formatted = tokenizer.apply_chat_template(
+    messages,
+    tokenize=False,  # Return string, not tokens
+    add_generation_prompt=True  # Add prompt for model to respond
+)
+
+print(formatted)
+```
+
+This ensures your prompts match how the model was trained, leading to better responses.
+
+---
+
+## Device Management
+
+### Check for GPU
+
+```python
+import torch
+
+if torch.cuda.is_available():
+    device = "cuda"
+elif torch.backends.mps.is_available():
+    device = "mps"  # Apple Silicon
+else:
+    device = "cpu"
+
+print(f"Using device: {device}")
+```
+
+### Move Model to GPU
+
+```python
+model = AutoModelForCausalLM.from_pretrained(
+    model_name,
+    torch_dtype=torch.bfloat16,
+    device_map="auto"  # Automatically use GPU if available
+)
+```
+
+---
+
+## Memory Optimization
+
+Large models require significant memory. Here are strategies to reduce usage:
+
+### Load in 8-bit or 4-bit
+
+```python
+model = AutoModelForCausalLM.from_pretrained(
+    model_name,
+    load_in_8bit=True  # Requires bitsandbytes library
+)
+```
+
+### Offload to CPU
+
+```python
+model = AutoModelForCausalLM.from_pretrained(
+    model_name,
+    device_map="auto",
+    offload_folder="offload"  # Offload layers to disk
+)
+```
+
+---
+
+## Practical Example
+
+Complete example for local inference:
+
+```python
+import os
+import torch
+from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
+
+# Set token
+os.environ["HF_TOKEN"] = "your_token"
+
+# Choose model
+model_name = "google/gemma-3-1b-it"
+
+# Load tokenizer and model
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = AutoModelForCausalLM.from_pretrained(
+    model_name,
+    torch_dtype=torch.bfloat16,
+    device_map="auto"
+)
+
+# Create pipeline
+generator = pipeline(
+    "text-generation",
+    model=model,
+    tokenizer=tokenizer
+)
+
+# Format messages
+messages = [
+    {"role": "user", "content": "Explain Python in one sentence."}
+]
+
+prompt = tokenizer.apply_chat_template(
+    messages,
+    tokenize=False,
+    add_generation_prompt=True
+)
+
+# Generate
+output = generator(prompt, max_new_tokens=50)
+print(output[0]['generated_text'])
+```
+

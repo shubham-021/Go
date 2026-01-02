@@ -1,0 +1,186 @@
+---
+title: MCP, A2A, and Guardrails
+description: Protocol standards and safety measures for AI applications
+---
+
+## MCP (Model Context Protocol)
+
+### What is MCP?
+
+Model Context Protocol is a standard for connecting AI models to external tools, data sources, and systems.
+
+**The problem:** Every AI tool integration is custom. No standard way for models to access databases, APIs, or file systems.
+
+**The solution:** A universal protocol that any AI can use to interact with any compatible tool.
+
+### How MCP Works
+
+```
+AI Model <--MCP Protocol--> MCP Server <--> Tool/Data Source
+```
+
+The MCP server exposes capabilities (tools, resources) that AI models can discover and use.
+
+### Key Concepts
+
+| Concept | Description |
+|---------|-------------|
+| Tools | Functions the AI can call (search, calculate, execute) |
+| Resources | Data sources the AI can read (files, databases) |
+| Prompts | Pre-defined prompt templates |
+| Sampling | Letting the server ask the AI questions |
+
+### Benefits
+
+- **Standardization:** Build once, use with any MCP-compatible model
+- **Security:** Server controls what AI can access
+- **Modularity:** Swap tools without changing AI code
+- **Discovery:** AI can learn what tools are available
+
+---
+
+## A2A Protocol (Agent-to-Agent)
+
+### What is A2A?
+
+A2A Protocol enables AI agents to communicate with each other, similar to how APIs enable service-to-service communication.
+
+### Why A2A?
+
+Complex tasks may require multiple specialized agents:
+- Research agent finds information
+- Analysis agent processes data
+- Writing agent creates reports
+
+A2A provides a standard way for these agents to:
+- Discover each other's capabilities
+- Exchange messages
+- Coordinate on tasks
+
+### Key Concepts
+
+| Concept | Description |
+|---------|-------------|
+| Agent Card | Describes agent's capabilities and interface |
+| Tasks | Work requests between agents |
+| Messages | Communication between agents |
+| Artifacts | Outputs passed between agents |
+
+### MCP vs A2A
+
+| MCP | A2A |
+|-----|-----|
+| AI ↔ Tools | AI ↔ AI |
+| Function calling | Agent collaboration |
+| Synchronous | Async workflows |
+| Single model | Multi-agent systems |
+
+---
+
+## Guardrails
+
+### What are Guardrails?
+
+Guardrails are safety mechanisms that constrain AI behavior:
+- Filter harmful outputs
+- Validate input/output format
+- Enforce business rules
+- Block prompt injection
+
+### Why Guardrails?
+
+| Risk | Guardrail Solution |
+|------|-------------------|
+| Toxic content | Output content filter |
+| Off-topic responses | Topic classifier |
+| Prompt injection | Input sanitization |
+| Hallucination | Fact-checking layer |
+| PII exposure | Data masking |
+
+### Types of Guardrails
+
+**Input Guardrails:**
+```
+User Input → [Validate] → [Sanitize] → [Classify] → Model
+```
+- Block malicious prompts
+- Reject off-topic requests
+- Mask sensitive data
+
+**Output Guardrails:**
+```
+Model → [Filter] → [Validate] → [Format] → User
+```
+- Remove harmful content
+- Verify factual claims
+- Ensure format compliance
+
+### Implementation Approaches
+
+**Rule-based:**
+```python
+def check_output(response):
+    banned_phrases = ["I hate", "you should die"]
+    for phrase in banned_phrases:
+        if phrase in response.lower():
+            return "I cannot provide that response."
+    return response
+```
+
+**ML-based:**
+```python
+classifier = load_toxicity_model()
+score = classifier(response)
+if score > 0.8:
+    return "Response blocked for safety."
+```
+
+**LLM-based:**
+```python
+check_prompt = f"Is this response safe and appropriate? Response: {response}"
+is_safe = llm(check_prompt)
+```
+
+### Guardrails Libraries
+
+**NeMo Guardrails (NVIDIA):**
+- Define safety rules in a configuration
+- Works with any LLM
+- Built-in rails for common use cases
+
+**Guardrails AI:**
+- Output validation
+- Re-prompting on failure
+- Structured output enforcement
+
+---
+
+## Best Practices
+
+### Defense in Depth
+
+Apply multiple layers:
+1. Input validation
+2. Context limits
+3. Output filtering
+4. Human review for high-risk actions
+
+### Fail Safe
+
+When guardrails trigger, have a graceful fallback:
+```python
+try:
+    response = generate(input)
+    if not passes_guardrails(response):
+        response = "I'm unable to help with that request."
+except:
+    response = "Something went wrong. Please try again."
+```
+
+### Monitor and Update
+
+- Log guardrail triggers
+- Review blocked content
+- Update rules based on new threats
+- A/B test guardrail strictness
+

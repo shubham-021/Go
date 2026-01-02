@@ -1,0 +1,403 @@
+---
+title: Express Middleware
+description: Understanding built-in middleware, request parsing, and form handling in Express.js
+---
+
+## What is Middleware?
+
+Middleware functions are functions that have access to the request object (`req`), response object (`res`), and the `next` function. They can:
+
+- Execute any code
+- Modify the request and response objects
+- End the request-response cycle
+- Call the next middleware in the stack
+
+```javascript
+app.use((req, res, next) => {
+  console.log(`${req.method} ${req.url}`);
+  next(); // Pass control to the next middleware
+});
+```
+
+---
+
+## Built-in Express Middleware
+
+Express provides several built-in middleware functions for common tasks:
+
+| Middleware | Purpose | Content-Type |
+|------------|---------|--------------|
+| `express.json()` | Parse JSON request bodies | `application/json` |
+| `express.urlencoded()` | Parse URL-encoded form data | `application/x-www-form-urlencoded` |
+| `express.static()` | Serve static files | Various |
+| `express.raw()` | Parse body as raw `Buffer` | `application/octet-stream` |
+| `express.text()` | Parse body as plain text | `text/plain` |
+
+---
+
+## `express.json()`
+
+Parses incoming requests with JSON payloads. Essential for REST APIs.
+
+```javascript
+app.use(express.json());
+
+app.post('/api/users', (req, res) => {
+  console.log(req.body); // { name: 'John', email: 'john@example.com' }
+  res.json({ success: true });
+});
+```
+
+**Client request:**
+
+```javascript
+fetch('/api/users', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ name: 'John', email: 'john@example.com' })
+});
+```
+
+### Options
+
+```javascript
+app.use(express.json({
+  limit: '10kb',        // Max body size (default: 100kb)
+  strict: true,         // Only accept arrays and objects (default: true)
+  type: 'application/json' // Content type to parse
+}));
+```
+
+---
+
+## `express.urlencoded()`
+
+Parses URL-encoded form data, the default encoding for HTML form submissions.
+
+```javascript
+app.use(express.urlencoded({ extended: true }));
+
+app.post('/login', (req, res) => {
+  console.log(req.body); // { username: 'shubham', password: '12345' }
+  res.send('Login successful');
+});
+```
+
+### The `extended` Option
+
+| Value | Parser | Nested Objects |
+|-------|--------|----------------|
+| `true` | `qs` library | Supported |
+| `false` | `querystring` module | Not supported |
+
+**With `extended: true`:**
+
+```html
+<input name="user[name]" value="John" />
+<input name="user[age]" value="25" />
+```
+
+Parses to:
+
+```javascript
+{ user: { name: 'John', age: '25' } }
+```
+
+**With `extended: false`:**
+
+```javascript
+{ 'user[name]': 'John', 'user[age]': '25' }
+```
+
+---
+
+## Understanding URL-Encoded Data
+
+### What is `application/x-www-form-urlencoded`?
+
+It's a MIME type that specifies how form data is encoded in the HTTP request body:
+
+- Fields are formatted as `key=value` pairs
+- Pairs are joined with `&`
+- Spaces become `+`
+- Special characters are percent-encoded
+
+**HTML Form:**
+
+```html
+<form action="/submit" method="POST">
+  <input name="name" value="John Doe" />
+  <input name="email" value="john@example.com" />
+  <button type="submit">Submit</button>
+</form>
+```
+
+**Encoded Request Body:**
+
+```
+name=John+Doe&email=john%40example.com
+```
+
+| Character | Encoded |
+|-----------|---------|
+| Space | `+` or `%20` |
+| `@` | `%40` |
+| `&` | `%26` |
+| `=` | `%3D` |
+| `/` | `%2F` |
+
+### Without Middleware
+
+If you don't add `express.urlencoded()`, `req.body` will be `undefined`:
+
+```javascript
+app.post('/submit', (req, res) => {
+  console.log(req.body); // undefined!
+});
+```
+
+---
+
+## Complete Form Handling Example
+
+```javascript
+import express from 'express';
+
+const app = express();
+
+// Parse URL-encoded form data
+app.use(express.urlencoded({ extended: true }));
+
+// Serve a simple HTML form
+app.get('/login', (req, res) => {
+  res.send(`
+    <form action="/login" method="POST">
+      <input name="username" type="text" placeholder="Username" />
+      <input name="password" type="password" placeholder="Password" />
+      <button type="submit">Login</button>
+    </form>
+  `);
+});
+
+// Handle form submission
+app.post('/login', (req, res) => {
+  const { username, password } = req.body;
+  console.log(`Login attempt: ${username}`);
+  
+  // Validate credentials...
+  res.send(`Welcome, ${username}!`);
+});
+
+app.listen(3000, () => console.log('Server running on port 3000'));
+```
+
+---
+
+## `express.static()`
+
+Serves static files like HTML, CSS, JavaScript, and images.
+
+```javascript
+// Serve files from the 'public' directory
+app.use(express.static('public'));
+```
+
+**Directory Structure:**
+
+```
+project/
+  public/
+    index.html
+    css/
+      style.css
+    js/
+      app.js
+    images/
+      logo.png
+```
+
+**Access URLs:**
+
+| File | URL |
+|------|-----|
+| `public/index.html` | `http://localhost:3000/index.html` |
+| `public/css/style.css` | `http://localhost:3000/css/style.css` |
+| `public/images/logo.png` | `http://localhost:3000/images/logo.png` |
+
+### Virtual Path Prefix
+
+Add a mount path to namespace static files:
+
+```javascript
+app.use('/static', express.static('public'));
+```
+
+Now files are accessed at `/static/css/style.css` instead of `/css/style.css`.
+
+### Multiple Static Directories
+
+```javascript
+app.use(express.static('public'));
+app.use(express.static('uploads'));
+app.use(express.static('assets'));
+```
+
+Express searches directories in order until it finds a match.
+
+### Options
+
+```javascript
+app.use(express.static('public', {
+  maxAge: '1d',           // Cache control max-age
+  index: 'index.html',    // Default file for directories
+  dotfiles: 'ignore',     // How to handle dotfiles
+  etag: true,             // Enable ETag generation
+  extensions: ['html']    // Try appending extensions
+}));
+```
+
+---
+
+## `express.raw()` and `express.text()`
+
+For less common content types:
+
+```javascript
+// Parse body as Buffer
+app.use(express.raw({ type: 'application/octet-stream' }));
+
+app.post('/upload', (req, res) => {
+  console.log(req.body); // <Buffer ...>
+});
+```
+
+```javascript
+// Parse body as plain text
+app.use(express.text({ type: 'text/plain' }));
+
+app.post('/log', (req, res) => {
+  console.log(req.body); // 'This is plain text'
+});
+```
+
+---
+
+## MIME Types
+
+MIME (Multipurpose Internet Mail Extensions) types describe the format of data being transmitted.
+
+### Common MIME Types
+
+| MIME Type | Description | Example |
+|-----------|-------------|---------|
+| `application/json` | JSON data | API responses |
+| `application/x-www-form-urlencoded` | Form data | HTML form submissions |
+| `multipart/form-data` | File uploads | Forms with file inputs |
+| `text/html` | HTML documents | Web pages |
+| `text/plain` | Plain text | Log data |
+| `text/css` | CSS stylesheets | Styling |
+| `application/javascript` | JavaScript | Scripts |
+| `image/png` | PNG images | Graphics |
+| `application/octet-stream` | Binary data | File downloads |
+
+### How MIME Types Work
+
+The `Content-Type` header tells the server how to interpret the request body:
+
+```http
+POST /api/data HTTP/1.1
+Content-Type: application/json
+
+{"key": "value"}
+```
+
+Express middleware checks this header to decide whether to process the request.
+
+---
+
+## Form Action Paths
+
+Understanding how the `action` attribute works in HTML forms:
+
+### Absolute Path (Leading `/`)
+
+```html
+<form action="/user" method="POST">
+```
+
+Submits relative to the **root** of the site.
+
+| Current Page | Submits To |
+|--------------|------------|
+| `https://example.com/profile` | `https://example.com/user` |
+| `https://example.com/account/settings` | `https://example.com/user` |
+
+### Relative Path (No Leading `/`)
+
+```html
+<form action="user" method="POST">
+```
+
+Submits relative to the **current directory**.
+
+| Current Page | Submits To |
+|--------------|------------|
+| `https://example.com/profile` | `https://example.com/user` |
+| `https://example.com/account/` | `https://example.com/account/user` |
+| `https://example.com/account/settings` | `https://example.com/account/user` |
+
+### Full URL
+
+```html
+<form action="https://api.example.com/submit" method="POST">
+```
+
+Submits to the exact URL specified, useful for cross-origin form submissions.
+
+### Empty Action
+
+```html
+<form action="" method="POST">
+```
+
+Submits to the current page URL.
+
+---
+
+## Middleware Order Matters
+
+Middleware executes in the order it's defined. Place parsers before route handlers:
+
+```javascript
+// Correct order
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+app.post('/api/data', (req, res) => {
+  // req.body is populated
+});
+```
+
+```javascript
+// Wrong order
+app.post('/api/data', (req, res) => {
+  // req.body is undefined!
+});
+
+app.use(express.json());
+```
+
+---
+
+## Quick Reference
+
+| Task | Code |
+|------|------|
+| Parse JSON bodies | `app.use(express.json())` |
+| Parse form data | `app.use(express.urlencoded({ extended: true }))` |
+| Serve static files | `app.use(express.static('public'))` |
+| Parse raw binary | `app.use(express.raw())` |
+| Parse plain text | `app.use(express.text())` |
+| Access parsed body | `req.body` |
+| Limit body size | `express.json({ limit: '10kb' })` |
+

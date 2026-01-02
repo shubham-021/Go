@@ -1,0 +1,347 @@
+---
+title: Transformer Fundamentals
+description: Understanding the core concepts that power modern LLMs - tokenization, embeddings, attention, and positional encoding
+---
+
+## How LLMs Process Text
+
+Large Language Models don't read text the way humans do. They transform text through several stages before they can "understand" and generate responses.
+
+```
+Raw Text → Tokens → Embeddings → Positional Encoding → Attention → Output
+```
+
+Each stage serves a specific purpose in helping the model process language.
+
+---
+
+## Tokenization
+
+### What is Tokenization?
+
+Tokenization is the process of breaking text into smaller units called **tokens**. These tokens are the fundamental units that LLMs work with.
+
+Tokens are not necessarily words. Depending on the tokenizer, they could be:
+- Whole words: `"hello"` → `["hello"]`
+- Subwords: `"unhappiness"` → `["un", "happiness"]`
+- Characters: `"cat"` → `["c", "a", "t"]`
+- Byte-level pieces: Complex words broken into byte sequences
+
+### Why Not Just Use Words?
+
+| Approach | Problem |
+|----------|---------|
+| Word-based | Vocabulary explodes (millions of words), can't handle new words |
+| Character-based | Sequences become very long, loses word meaning |
+| Subword (BPE) | Balanced: reasonable vocabulary size, handles new words |
+
+Modern LLMs use **Byte Pair Encoding (BPE)** or similar algorithms that learn common subword patterns from training data.
+
+### How BPE Works
+
+1. Start with all characters as the initial vocabulary
+2. Find the most frequent pair of adjacent tokens
+3. Merge that pair into a new token
+4. Repeat until vocabulary reaches desired size
+
+**Example:**
+```
+Training text: "low lower lowest"
+
+Step 1: ['l', 'o', 'w', ' ', 'l', 'o', 'w', 'e', 'r', ' ', 'l', 'o', 'w', 'e', 's', 't']
+Step 2: 'l' + 'o' → 'lo' (most frequent pair)
+Step 3: 'lo' + 'w' → 'low' (now most frequent)
+Final: ['low', ' ', 'low', 'er', ' ', 'low', 'est']
+```
+
+### Token IDs
+
+Each token maps to a unique integer ID. The model only works with these IDs, not the text.
+
+```python
+tokenizer("Hello, how are you?")
+# {'input_ids': [2, 9259, 236764, 1217, 659, 611, 236881], 
+#  'attention_mask': [1, 1, 1, 1, 1, 1, 1]}
+```
+
+The `attention_mask` indicates which tokens are real (1) vs padding (0).
+
+### Vocabulary Size
+
+Each model has a fixed vocabulary size determined during training:
+
+| Model | Vocabulary Size |
+|-------|----------------|
+| GPT-2 | 50,257 |
+| GPT-4 | ~100,000 |
+| LLaMA | 32,000 |
+| Gemma | 256,000 |
+
+---
+
+## Vector Embeddings
+
+### The Problem: Tokens Are Just Numbers
+
+After tokenization, we have token IDs like `[2, 9259, 236764]`. But these numbers don't carry any meaning. `9259` isn't "bigger" or "more similar" to `9258` in any meaningful way.
+
+### The Solution: Semantic Vectors
+
+**Embeddings** convert each token ID into a high-dimensional vector (list of numbers) that captures the token's **semantic meaning**.
+
+```
+Token "king" → [0.2, -0.5, 0.8, 0.1, ..., 0.3]  (768 dimensions)
+Token "queen" → [0.25, -0.48, 0.75, 0.12, ..., 0.28]
+Token "apple" → [-0.6, 0.3, -0.2, 0.9, ..., -0.4]
+```
+
+### Why Vectors Capture Meaning
+
+In a well-trained embedding space:
+- Similar concepts have similar vectors (close together)
+- Relationships are preserved as directions
+
+The famous example:
+```
+vector("king") - vector("man") + vector("woman") ≈ vector("queen")
+```
+
+This works because the embedding space learned that:
+- "king" and "queen" share royalty characteristics
+- "man" and "woman" differ in gender characteristics
+
+### Embedding Dimensions
+
+| Model | Embedding Dimensions |
+|-------|---------------------|
+| GPT-2 | 768 |
+| GPT-3 | 12,288 |
+| LLaMA-7B | 4,096 |
+| LLaMA-70B | 8,192 |
+
+Higher dimensions can capture more nuanced relationships but require more computation.
+
+### How Embeddings Are Learned
+
+Embeddings aren't hand-coded. They're **learned during training** by adjusting the vector values so that:
+- Tokens appearing in similar contexts get similar vectors
+- The model can use these vectors to predict text accurately
+
+The embedding layer is essentially a lookup table:
+```
+Token ID 9259 → Look up row 9259 in embedding matrix → Get 768-dimensional vector
+```
+
+---
+
+## Positional Encoding
+
+### The Problem: Transformers Have No Sense of Order
+
+Unlike RNNs that process tokens one-by-one, Transformers process all tokens **in parallel**. This is great for speed, but it means the model doesn't know which token comes first.
+
+Without positional information:
+```
+"The cat sat on the mat" 
+```
+and
+```
+"The mat sat on the cat"
+```
+would look identical to the model (same tokens, just different order).
+
+### The Solution: Add Position Information
+
+**Positional encoding** adds a unique signal to each token's embedding based on its position in the sequence.
+
+```
+Final embedding = Token embedding + Positional encoding
+```
+
+### How Positional Encodings Work
+
+The original Transformer uses **sinusoidal positional encoding**:
+
+```
+PE(pos, 2i)   = sin(pos / 10000^(2i/d))
+PE(pos, 2i+1) = cos(pos / 10000^(2i/d))
+```
+
+Where:
+- `pos` = position in sequence (0, 1, 2, ...)
+- `i` = dimension index
+- `d` = embedding dimension
+
+### Why Sinusoids?
+
+1. **Unique per position**: Each position gets a distinct pattern
+2. **Relative positions**: The model can learn to attend to "3 tokens back" regardless of absolute position
+3. **Generalization**: Works for sequences longer than seen during training
+
+### Learned vs Fixed Positional Encodings
+
+| Type | Description | Used By |
+|------|-------------|---------|
+| Sinusoidal (fixed) | Mathematical formula, not learned | Original Transformer |
+| Learned | Trained like embeddings | GPT-2, BERT |
+| RoPE (Rotary) | Rotates embeddings based on position | LLaMA, GPT-NeoX |
+| ALiBi | Attention bias instead of embedding addition | BLOOM |
+
+Modern models often use **RoPE (Rotary Position Embedding)** which encodes position through rotation, allowing better extrapolation to longer sequences.
+
+---
+
+## Self-Attention Mechanism
+
+### The Core Question
+
+For each token, the model needs to ask: **"Which other tokens should I pay attention to?"**
+
+In the sentence: *"The animal didn't cross the street because it was too tired"*
+
+When processing "it", the model needs to figure out what "it" refers to. Self-attention allows the model to look at all other tokens and determine that "it" likely refers to "animal".
+
+### The Attention Formula
+
+```
+Attention(Q, K, V) = softmax(QK^T / √d_k) × V
+```
+
+This looks complex, but the intuition is simple:
+
+1. **Query (Q)**: "What am I looking for?"
+2. **Key (K)**: "What do I contain?"
+3. **Value (V)**: "What information do I provide?"
+
+### Step-by-Step Attention
+
+For each token:
+
+**Step 1: Create Q, K, V vectors**
+```
+Each token embedding → Multiply by learned weight matrices → Get Q, K, V
+```
+
+**Step 2: Calculate attention scores**
+```
+Score = Query · Key (dot product)
+```
+High score = this key is relevant to this query.
+
+**Step 3: Scale the scores**
+```
+Scaled score = Score / √(dimension of key)
+```
+This prevents scores from getting too large, which would make softmax too "sharp".
+
+**Step 4: Apply softmax**
+```
+Attention weights = softmax(scaled scores)
+```
+Converts scores to probabilities that sum to 1.
+
+**Step 5: Weighted sum of values**
+```
+Output = Σ (attention weight × value)
+```
+The final output is a blend of all values, weighted by relevance.
+
+### Visualizing Attention
+
+For the sentence "The cat sat":
+
+| Token | Attends to "The" | Attends to "cat" | Attends to "sat" |
+|-------|-----------------|------------------|------------------|
+| "The" | 0.6 | 0.3 | 0.1 |
+| "cat" | 0.4 | 0.5 | 0.1 |
+| "sat" | 0.2 | 0.6 | 0.2 |
+
+Each row sums to 1. High values indicate strong attention.
+
+---
+
+## Multi-Head Attention
+
+### Why Multiple Heads?
+
+Single attention can only capture one type of relationship at a time. **Multi-head attention** runs multiple attention operations in parallel, each learning different patterns:
+
+- **Head 1**: Might learn syntactic relationships (subject-verb)
+- **Head 2**: Might learn semantic relationships (synonyms)
+- **Head 3**: Might learn positional relationships (next word)
+- **Head 4**: Might learn coreference (what "it" refers to)
+
+### How It Works
+
+1. Split the embedding into `h` heads (e.g., 768 dims ÷ 12 heads = 64 dims each)
+2. Each head performs attention independently
+3. Concatenate all head outputs
+4. Apply a final linear transformation
+
+```
+MultiHead(Q, K, V) = Concat(head_1, head_2, ..., head_h) × W_O
+
+where head_i = Attention(Q × W_Qi, K × W_Ki, V × W_Vi)
+```
+
+### Number of Attention Heads
+
+| Model | Heads | Embedding Dim | Dim per Head |
+|-------|-------|---------------|--------------|
+| GPT-2 | 12 | 768 | 64 |
+| GPT-3 | 96 | 12,288 | 128 |
+| LLaMA-7B | 32 | 4,096 | 128 |
+
+---
+
+## Putting It All Together
+
+The full flow for one layer of a Transformer:
+
+```
+1. Input text: "Hello world"
+
+2. Tokenization: ["Hello", " world"] → [15496, 995]
+
+3. Embedding lookup: 
+   15496 → [0.1, -0.3, 0.5, ...]
+   995   → [0.2, 0.1, -0.4, ...]
+
+4. Add positional encoding:
+   Position 0: [0.1, -0.3, 0.5, ...] + [sin/cos pattern for pos 0]
+   Position 1: [0.2, 0.1, -0.4, ...] + [sin/cos pattern for pos 1]
+
+5. Multi-head self-attention:
+   Each token attends to all tokens
+   12 different attention patterns computed in parallel
+   Outputs combined
+
+6. Feed-forward network:
+   Process each token independently
+   Add non-linearity
+
+7. Repeat for N layers (GPT-3 has 96 layers)
+
+8. Final layer outputs probability distribution over vocabulary
+```
+
+The model predicts the most likely next token, samples from that distribution, adds it to the input, and repeats.
+
+---
+
+## Key Takeaways
+
+| Concept | Purpose |
+|---------|---------|
+| Tokenization | Convert text to numeric IDs the model can process |
+| Embeddings | Give tokens semantic meaning as vectors |
+| Positional Encoding | Tell the model where each token is in the sequence |
+| Self-Attention | Let each token "look at" all other tokens |
+| Multi-Head Attention | Learn multiple types of relationships simultaneously |
+
+Understanding these concepts helps you:
+- Debug tokenization issues (unexpected token splits)
+- Understand context window limits (position encodings)
+- Interpret model behavior (attention patterns)
+- Choose appropriate models for your task
+

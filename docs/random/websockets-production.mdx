@@ -1,0 +1,639 @@
+---
+title: WebSockets in Production
+description: Authentication, security, scaling, and best practices for production-ready WebSocket applications
+---
+
+## Authentication Strategies
+
+WebSockets don't have built-in authentication like HTTP cookies or headers after the initial handshake. You need to authenticate before or during connection establishment.
+
+### Strategy 1: Token in Query String
+
+Pass a JWT or session token as a query parameter during the handshake.
+
+```javascript
+// Client
+const socket = new WebSocket('wss://api.example.com?token=eyJhbGci...');
+```
+
+```javascript
+// Server (using ws library)
+const WebSocket = require('ws');
+const jwt = require('jsonwebtoken');
+const url = require('url');
+
+const wss = new WebSocket.Server({ port: 8080 });
+
+wss.on('connection', (socket, request) => {
+  const params = new URLSearchParams(url.parse(request.url).query);
+  const token = params.get('token');
+
+  try {
+    const user = jwt.verify(token, process.env.JWT_SECRET);
+    socket.user = user; // Attach user to socket for later use
+    console.log('Authenticated:', user.id);
+  } catch (err) {
+    socket.close(4001, 'Unauthorized');
+    return;
+  }
+
+  socket.on('message', (data) => {
+    // socket.user is available here
+  });
+});
+```
+
+**Pros:** Simple to implement, works with any WebSocket client.
+
+**Cons:** Tokens appear in server logs and browser history. Use short-lived tokens.
+
+### Strategy 2: Token in First Message
+
+Establish the connection first, then send credentials as the first message.
+
+```javascript
+// Client
+const socket = new WebSocket('wss://api.example.com');
+
+socket.onopen = () => {
+  socket.send(JSON.stringify({
+    type: 'auth',
+    token: 'eyJhbGci...'
+  }));
+};
+```
+
+```javascript
+// Server
+wss.on('connection', (socket) => {
+  socket.isAuthenticated = false;
+
+  socket.on('message', (data) => {
+    const message = JSON.parse(data);
+
+    if (!socket.isAuthenticated) {
+      if (message.type === 'auth') {
+        try {
+          socket.user = jwt.verify(message.token, process.env.JWT_SECRET);
+          socket.isAuthenticated = true;
+          socket.send(JSON.stringify({ type: 'auth', status: 'success' }));
+        } catch (err) {
+          socket.close(4001, 'Invalid token');
+        }
+      } else {
+        socket.close(4002, 'Authentication required');
+      }
+      return;
+    }
+
+    // Handle authenticated messages
+    handleMessage(socket, message);
+  });
+
+  // Auto-close if not authenticated within timeout
+  setTimeout(() => {
+    if (!socket.isAuthenticated) {
+      socket.close(4003, 'Authentication timeout');
+    }
+  }, 5000);
+});
+```
+
+**Pros:** Token not in URL, more secure.
+
+**Cons:** Requires message handling before authentication, slightly more complex.
+
+### Strategy 3: Cookie-Based Authentication
+
+If your WebSocket server shares the domain with your HTTP server, cookies are sent automatically during the handshake.
+
+```javascript
+// Server
+const wss = new WebSocket.Server({ server: httpServer });
+
+wss.on('connection', (socket, request) => {
+  const cookies = parseCookies(request.headers.cookie);
+  const sessionId = cookies['session_id'];
+
+  // Validate session against your session store
+  const session = await sessionStore.get(sessionId);
+  
+  if (!session) {
+    socket.close(4001, 'Invalid session');
+    return;
+  }
+
+  socket.user = session.user;
+});
+
+function parseCookies(cookieHeader) {
+  const cookies = {};
+  if (cookieHeader) {
+    cookieHeader.split(';').forEach(cookie => {
+      const [name, value] = cookie.trim().split('=');
+      cookies[name] = value;
+    });
+  }
+  return cookies;
+}
+```
+
+**Pros:** Seamless if you already use session cookies, automatic CSRF protection.
+
+**Cons:** Only works same-origin, cookies must be `HttpOnly` and `Secure`.
+
+---
+
+## Security Considerations
+
+### Always Use WSS (WebSocket Secure)
+
+Never use `ws://` in production. Always use `wss://` which encrypts traffic with TLS.
+
+```javascript
+// Development
+const socket = new WebSocket('ws://localhost:8080');
+
+// Production
+const socket = new WebSocket('wss://api.example.com');
+```
+
+### Validate All Incoming Messages
+
+Never trust client data. Validate and sanitize every message.
+
+```javascript
+const Joi = require('joi');
+
+const messageSchema = Joi.object({
+  type: Joi.string().valid('chat', 'action', 'ping').required(),
+  payload: Joi.object().required(),
+  timestamp: Joi.number().integer().positive()
+});
+
+socket.on('message', (raw) => {
+  let message;
+  
+  try {
+    message = JSON.parse(raw);
+  } catch (err) {
+    socket.send(JSON.stringify({ error: 'Invalid JSON' }));
+    return;
+  }
+
+  const { error, value } = messageSchema.validate(message);
+  
+  if (error) {
+    socket.send(JSON.stringify({ error: 'Invalid message format' }));
+    return;
+  }
+
+  handleValidatedMessage(socket, value);
+});
+```
+
+### Rate Limiting
+
+Prevent abuse by limiting message frequency per connection.
+
+```javascript
+const rateLimit = new Map();
+
+function isRateLimited(socketId, limit = 100, window = 60000) {
+  const now = Date.now();
+  const userData = rateLimit.get(socketId) || { count: 0, resetTime: now + window };
+
+  if (now > userData.resetTime) {
+    userData.count = 0;
+    userData.resetTime = now + window;
+  }
+
+  userData.count++;
+  rateLimit.set(socketId, userData);
+
+  return userData.count > limit;
+}
+
+socket.on('message', (data) => {
+  if (isRateLimited(socket.id)) {
+    socket.send(JSON.stringify({ error: 'Rate limit exceeded' }));
+    return;
+  }
+  
+  // Process message
+});
+```
+
+### Message Size Limits
+
+Prevent memory exhaustion from large payloads.
+
+```javascript
+const wss = new WebSocket.Server({
+  port: 8080,
+  maxPayload: 1024 * 1024 // 1MB limit
+});
+```
+
+### Origin Validation
+
+Restrict which origins can connect to prevent unauthorized access.
+
+```javascript
+const wss = new WebSocket.Server({
+  port: 8080,
+  verifyClient: (info, callback) => {
+    const origin = info.origin;
+    const allowedOrigins = ['https://example.com', 'https://app.example.com'];
+
+    if (allowedOrigins.includes(origin)) {
+      callback(true);
+    } else {
+      callback(false, 403, 'Forbidden origin');
+    }
+  }
+});
+```
+
+---
+
+## Connection Management
+
+### Heartbeats (Ping/Pong)
+
+Detect dead connections that didn't close properly. The WebSocket protocol includes ping/pong frames for this purpose.
+
+```javascript
+const HEARTBEAT_INTERVAL = 30000; // 30 seconds
+
+wss.on('connection', (socket) => {
+  socket.isAlive = true;
+
+  socket.on('pong', () => {
+    socket.isAlive = true;
+  });
+});
+
+const heartbeat = setInterval(() => {
+  wss.clients.forEach((socket) => {
+    if (!socket.isAlive) {
+      console.log('Terminating dead connection');
+      return socket.terminate();
+    }
+
+    socket.isAlive = false;
+    socket.ping(); // Client should respond with pong
+  });
+}, HEARTBEAT_INTERVAL);
+
+wss.on('close', () => {
+  clearInterval(heartbeat);
+});
+```
+
+### Graceful Shutdown
+
+Handle server shutdown without abruptly dropping connections.
+
+```javascript
+process.on('SIGTERM', () => {
+  console.log('Shutting down...');
+
+  // Stop accepting new connections
+  wss.close(() => {
+    console.log('WebSocket server closed');
+  });
+
+  // Notify existing clients
+  wss.clients.forEach((socket) => {
+    socket.send(JSON.stringify({ type: 'server_shutdown' }));
+    socket.close(1001, 'Server shutting down');
+  });
+
+  // Force close after timeout
+  setTimeout(() => {
+    process.exit(0);
+  }, 10000);
+});
+```
+
+### Reconnection Logic (Client-Side)
+
+Implement exponential backoff for reconnection attempts.
+
+```javascript
+class ReconnectingWebSocket {
+  constructor(url) {
+    this.url = url;
+    this.reconnectAttempts = 0;
+    this.maxReconnectAttempts = 10;
+    this.baseDelay = 1000;
+    this.maxDelay = 30000;
+    this.connect();
+  }
+
+  connect() {
+    this.socket = new WebSocket(this.url);
+
+    this.socket.onopen = () => {
+      console.log('Connected');
+      this.reconnectAttempts = 0;
+    };
+
+    this.socket.onclose = (event) => {
+      if (event.code !== 1000) { // 1000 = normal closure
+        this.scheduleReconnect();
+      }
+    };
+
+    this.socket.onerror = (error) => {
+      console.error('WebSocket error:', error);
+    };
+  }
+
+  scheduleReconnect() {
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      console.error('Max reconnection attempts reached');
+      return;
+    }
+
+    const delay = Math.min(
+      this.baseDelay * Math.pow(2, this.reconnectAttempts),
+      this.maxDelay
+    );
+
+    console.log(`Reconnecting in ${delay}ms...`);
+    this.reconnectAttempts++;
+
+    setTimeout(() => this.connect(), delay);
+  }
+
+  send(data) {
+    if (this.socket.readyState === WebSocket.OPEN) {
+      this.socket.send(data);
+    }
+  }
+}
+```
+
+---
+
+## Scaling WebSocket Servers
+
+### The Problem with Multiple Instances
+
+WebSocket connections are stateful. If you have multiple server instances behind a load balancer, a message sent to instance A won't reach clients connected to instance B.
+
+### Solution: Publish/Subscribe with Redis
+
+Use Redis Pub/Sub to broadcast messages across all server instances.
+
+```javascript
+const Redis = require('ioredis');
+const publisher = new Redis();
+const subscriber = new Redis();
+
+// Subscribe to a channel
+subscriber.subscribe('chat:global');
+
+subscriber.on('message', (channel, message) => {
+  // Broadcast to all local WebSocket clients
+  wss.clients.forEach((socket) => {
+    if (socket.readyState === WebSocket.OPEN) {
+      socket.send(message);
+    }
+  });
+});
+
+// When a client sends a message, publish it
+socket.on('message', (data) => {
+  // Publish to Redis so all instances receive it
+  publisher.publish('chat:global', data);
+});
+```
+
+### Socket.IO with Redis Adapter
+
+Socket.IO has built-in Redis adapter support for scaling.
+
+```bash
+npm install @socket.io/redis-adapter redis
+```
+
+```javascript
+const { Server } = require('socket.io');
+const { createAdapter } = require('@socket.io/redis-adapter');
+const { createClient } = require('redis');
+
+const io = new Server(server);
+
+const pubClient = createClient({ url: 'redis://localhost:6379' });
+const subClient = pubClient.duplicate();
+
+Promise.all([pubClient.connect(), subClient.connect()]).then(() => {
+  io.adapter(createAdapter(pubClient, subClient));
+});
+
+// Now io.emit() reaches clients on ALL instances
+io.on('connection', (socket) => {
+  socket.on('chat message', (msg) => {
+    io.emit('chat message', msg); // Works across instances
+  });
+});
+```
+
+### Sticky Sessions
+
+If your WebSocket library doesn't support Pub/Sub, configure your load balancer for sticky sessions (session affinity) so a client always connects to the same instance.
+
+| Load Balancer | Sticky Session Setting |
+|---------------|------------------------|
+| Nginx | `ip_hash` or `sticky cookie` |
+| AWS ALB | Target group stickiness |
+| HAProxy | `balance source` or `cookie` |
+
+---
+
+## Message Protocols
+
+### Structured Message Format
+
+Define a consistent message format for your application.
+
+```typescript
+interface WebSocketMessage {
+  type: string;           // Message type identifier
+  payload: unknown;       // Message data
+  id?: string;            // Optional correlation ID for request/response
+  timestamp?: number;     // Optional client timestamp
+}
+```
+
+```javascript
+// Example messages
+{ type: 'chat:send', payload: { room: 'general', text: 'Hello!' } }
+{ type: 'user:typing', payload: { room: 'general', isTyping: true } }
+{ type: 'presence:update', payload: { status: 'online' } }
+```
+
+### Request/Response Pattern
+
+Implement request-response over WebSockets using correlation IDs.
+
+```javascript
+// Client
+class WebSocketClient {
+  constructor(url) {
+    this.socket = new WebSocket(url);
+    this.pendingRequests = new Map();
+    this.requestTimeout = 10000;
+
+    this.socket.onmessage = (event) => {
+      const message = JSON.parse(event.data);
+      
+      if (message.id && this.pendingRequests.has(message.id)) {
+        const { resolve, timer } = this.pendingRequests.get(message.id);
+        clearTimeout(timer);
+        this.pendingRequests.delete(message.id);
+        resolve(message.payload);
+      }
+    };
+  }
+
+  request(type, payload) {
+    return new Promise((resolve, reject) => {
+      const id = crypto.randomUUID();
+      
+      const timer = setTimeout(() => {
+        this.pendingRequests.delete(id);
+        reject(new Error('Request timeout'));
+      }, this.requestTimeout);
+
+      this.pendingRequests.set(id, { resolve, timer });
+      
+      this.socket.send(JSON.stringify({ type, payload, id }));
+    });
+  }
+}
+
+// Usage
+const client = new WebSocketClient('wss://api.example.com');
+const user = await client.request('user:get', { userId: 123 });
+```
+
+---
+
+## Monitoring and Debugging
+
+### Connection Metrics
+
+Track key metrics for observability.
+
+```javascript
+const metrics = {
+  connections: 0,
+  messagesReceived: 0,
+  messagesSent: 0,
+  errors: 0
+};
+
+wss.on('connection', (socket) => {
+  metrics.connections++;
+
+  socket.on('message', () => {
+    metrics.messagesReceived++;
+  });
+
+  socket.on('close', () => {
+    metrics.connections--;
+  });
+
+  socket.on('error', () => {
+    metrics.errors++;
+  });
+});
+
+// Expose metrics endpoint
+app.get('/metrics', (req, res) => {
+  res.json(metrics);
+});
+```
+
+### Logging
+
+Log connection events and errors for debugging.
+
+```javascript
+const winston = require('winston');
+
+const logger = winston.createLogger({
+  level: 'info',
+  format: winston.format.json(),
+  transports: [new winston.transports.File({ filename: 'websocket.log' })]
+});
+
+wss.on('connection', (socket, request) => {
+  const clientIp = request.headers['x-forwarded-for'] || request.socket.remoteAddress;
+  
+  logger.info('Client connected', {
+    ip: clientIp,
+    userAgent: request.headers['user-agent']
+  });
+
+  socket.on('close', (code, reason) => {
+    logger.info('Client disconnected', { code, reason: reason.toString() });
+  });
+
+  socket.on('error', (error) => {
+    logger.error('WebSocket error', { error: error.message });
+  });
+});
+```
+
+---
+
+## WebSocket Close Codes
+
+Understanding close codes helps debug connection issues.
+
+| Code | Name | Description |
+|------|------|-------------|
+| 1000 | Normal Closure | Clean close, no error |
+| 1001 | Going Away | Server shutting down or client navigating away |
+| 1002 | Protocol Error | Protocol violation |
+| 1003 | Unsupported Data | Received data type not supported |
+| 1006 | Abnormal Closure | Connection dropped without close frame |
+| 1008 | Policy Violation | Message violates server policy |
+| 1009 | Message Too Big | Message exceeds size limit |
+| 1011 | Internal Error | Server encountered an error |
+| 4000-4999 | Application Codes | Custom application-specific codes |
+
+```javascript
+// Using custom close codes
+socket.close(4001, 'Unauthorized');
+socket.close(4002, 'Invalid message format');
+socket.close(4003, 'Rate limit exceeded');
+```
+
+---
+
+## Production Checklist
+
+Before deploying WebSockets to production, verify:
+
+| Category | Checklist Item |
+|----------|----------------|
+| Security | Using WSS (TLS encryption) |
+| Security | Token-based or session-based authentication |
+| Security | Input validation on all messages |
+| Security | Rate limiting implemented |
+| Security | Origin validation configured |
+| Reliability | Heartbeat/ping-pong for dead connection detection |
+| Reliability | Client reconnection with exponential backoff |
+| Reliability | Graceful server shutdown handling |
+| Scaling | Redis Pub/Sub or sticky sessions for multi-instance |
+| Monitoring | Connection count metrics |
+| Monitoring | Error logging and alerting |
+| Performance | Message size limits configured |
+| Performance | Connection limits per IP/user |
+

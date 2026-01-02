@@ -1,0 +1,389 @@
+---
+title: Buffers
+description: Understanding binary data handling in Node.js with Buffers
+---
+
+## What is a Buffer?
+
+A buffer is a **fixed-size chunk of memory** allocated outside the V8 JavaScript engine. It holds raw binary data that can represent anything: text, images, audio, video, or any file content.
+
+Think of it as a temporary holding area where data waits before being processed or moved somewhere else.
+
+---
+
+## The Problem: JavaScript and Binary Data
+
+JavaScript was originally designed for browsers, where it primarily handled text and DOM manipulation. It had no concept of binary data.
+
+| Data Type | JavaScript Could Handle | JavaScript Couldn't Handle |
+|-----------|------------------------|---------------------------|
+| Text | Strings, JSON | Binary files |
+| Numbers | Integers, floats | Raw byte sequences |
+| Files | Text files | Images, videos, audio |
+| Network | Text protocols | Binary protocols |
+
+When Node.js brought JavaScript to the server, it needed to handle:
+- File system operations (reading/writing any file type)
+- Network protocols (TCP, UDP, HTTP)
+- Cryptography (encryption produces binary output)
+- Image processing
+- Compression/decompression
+
+Buffers solve this by providing a way to work with raw binary data directly.
+
+---
+
+## The Buffer Analogy
+
+**Without a buffer (inefficient):**
+```
+Reading a file one byte at a time:
+Read byte 1 → Process → Read byte 2 → Process → Read byte 3 → Process...
+(Thousands of tiny operations)
+```
+
+**With a buffer (efficient):**
+```
+Read 64KB chunk → Process entire chunk → Read next 64KB chunk → Process...
+(Fewer, larger operations)
+```
+
+It's like carrying books between rooms:
+- Without a buffer: Carry one book at a time (slow)
+- With a buffer: Use a box to carry many books at once (fast)
+
+---
+
+## What a Buffer Looks Like
+
+A buffer is an array of bytes. Each byte is a number from 0-255 (one byte = 8 bits = 2^8 possible values).
+
+```javascript
+// Create a buffer containing "Hello"
+const buf = Buffer.from('Hello');
+
+console.log(buf);
+// <Buffer 48 65 6c 6c 6f>
+
+// These are hexadecimal values:
+// 48 = 'H' (72 in decimal)
+// 65 = 'e' (101 in decimal)
+// 6c = 'l' (108 in decimal)
+// 6c = 'l' (108 in decimal)
+// 6f = 'o' (111 in decimal)
+```
+
+Each position in the buffer holds exactly one byte.
+
+---
+
+## Creating Buffers
+
+### From a String
+
+```javascript
+// Default encoding is UTF-8
+const buf = Buffer.from('Hello, World!');
+
+// Specify encoding
+const buf2 = Buffer.from('Hello', 'utf8');
+const buf3 = Buffer.from('48656c6c6f', 'hex');
+const buf4 = Buffer.from('SGVsbG8=', 'base64');
+```
+
+### Pre-allocated (Empty)
+
+```javascript
+// Allocate 10 bytes, initialized to 0
+const buf = Buffer.alloc(10);
+// <Buffer 00 00 00 00 00 00 00 00 00 00>
+
+// Allocate 10 bytes, uninitialized (faster but may contain old data)
+const unsafeBuf = Buffer.allocUnsafe(10);
+// <Buffer xx xx xx xx xx xx xx xx xx xx> (random data)
+```
+
+Use `alloc()` for security-sensitive data. Use `allocUnsafe()` when you'll immediately overwrite the contents and need performance.
+
+### From an Array of Bytes
+
+```javascript
+const buf = Buffer.from([72, 101, 108, 108, 111]);
+console.log(buf.toString()); // 'Hello'
+```
+
+---
+
+## Reading from Buffers
+
+### Convert to String
+
+```javascript
+const buf = Buffer.from('Hello, World!');
+
+// Entire buffer
+console.log(buf.toString()); // 'Hello, World!'
+
+// With encoding
+console.log(buf.toString('utf8')); // 'Hello, World!'
+console.log(buf.toString('hex'));  // '48656c6c6f2c20576f726c6421'
+console.log(buf.toString('base64')); // 'SGVsbG8sIFdvcmxkIQ=='
+
+// Substring (start, end)
+console.log(buf.toString('utf8', 0, 5)); // 'Hello'
+```
+
+### Access Individual Bytes
+
+```javascript
+const buf = Buffer.from('Hello');
+
+console.log(buf[0]); // 72 (decimal for 'H')
+console.log(buf[1]); // 101 (decimal for 'e')
+console.log(buf.length); // 5
+```
+
+### Iterate Over Bytes
+
+```javascript
+const buf = Buffer.from('Hi');
+
+for (const byte of buf) {
+  console.log(byte); // 72, then 105
+}
+
+// Or use forEach-style
+buf.forEach((byte, index) => {
+  console.log(`Position ${index}: ${byte}`);
+});
+```
+
+---
+
+## Writing to Buffers
+
+### Modify Individual Bytes
+
+```javascript
+const buf = Buffer.alloc(5);
+
+buf[0] = 72;  // 'H'
+buf[1] = 101; // 'e'
+buf[2] = 108; // 'l'
+buf[3] = 108; // 'l'
+buf[4] = 111; // 'o'
+
+console.log(buf.toString()); // 'Hello'
+```
+
+### Write a String
+
+```javascript
+const buf = Buffer.alloc(20);
+
+// write(string, offset, length, encoding)
+buf.write('Hello', 0);
+buf.write(' World', 5);
+
+console.log(buf.toString()); // 'Hello World'
+```
+
+### Copy Between Buffers
+
+```javascript
+const source = Buffer.from('Hello');
+const target = Buffer.alloc(10);
+
+// copy(target, targetStart, sourceStart, sourceEnd)
+source.copy(target, 0, 0, 5);
+
+console.log(target.toString()); // 'Hello'
+```
+
+---
+
+## Buffer Operations
+
+### Slicing (Views)
+
+`slice()` creates a view of the buffer, not a copy. Changes to the slice affect the original.
+
+```javascript
+const buf = Buffer.from('Hello World');
+const slice = buf.slice(0, 5);
+
+console.log(slice.toString()); // 'Hello'
+
+// Modifying slice affects original
+slice[0] = 74; // 'J'
+console.log(buf.toString()); // 'Jello World'
+```
+
+### Concatenating Buffers
+
+```javascript
+const buf1 = Buffer.from('Hello ');
+const buf2 = Buffer.from('World');
+
+const combined = Buffer.concat([buf1, buf2]);
+console.log(combined.toString()); // 'Hello World'
+
+// With total length specified (more efficient)
+const combined2 = Buffer.concat([buf1, buf2], 11);
+```
+
+### Comparing Buffers
+
+```javascript
+const buf1 = Buffer.from('ABC');
+const buf2 = Buffer.from('ABC');
+const buf3 = Buffer.from('ABD');
+
+console.log(buf1.equals(buf2)); // true
+console.log(buf1.equals(buf3)); // false
+
+// compare() returns -1, 0, or 1 (like sort comparator)
+console.log(buf1.compare(buf3)); // -1 (buf1 < buf3)
+console.log(buf3.compare(buf1)); // 1  (buf3 > buf1)
+```
+
+### Finding Data in Buffers
+
+```javascript
+const buf = Buffer.from('Hello World Hello');
+
+console.log(buf.indexOf('World'));     // 6
+console.log(buf.indexOf('Hello'));     // 0
+console.log(buf.lastIndexOf('Hello')); // 12
+console.log(buf.includes('World'));    // true
+```
+
+---
+
+## Common Use Cases
+
+### Reading Binary Files
+
+```javascript
+import { readFile } from 'fs/promises';
+
+const imageBuffer = await readFile('image.png');
+console.log(imageBuffer.length); // File size in bytes
+console.log(imageBuffer[0], imageBuffer[1]); // First two bytes (PNG magic number)
+```
+
+### Base64 Encoding/Decoding
+
+```javascript
+// Encode to base64
+const original = Buffer.from('Hello World');
+const base64 = original.toString('base64');
+console.log(base64); // 'SGVsbG8gV29ybGQ='
+
+// Decode from base64
+const decoded = Buffer.from(base64, 'base64');
+console.log(decoded.toString()); // 'Hello World'
+```
+
+### Working with Hex Data
+
+```javascript
+// Create buffer from hex string
+const buf = Buffer.from('48656c6c6f', 'hex');
+console.log(buf.toString()); // 'Hello'
+
+// Convert buffer to hex
+const hex = Buffer.from('Hello').toString('hex');
+console.log(hex); // '48656c6c6f'
+```
+
+### JSON Serialization
+
+Buffers serialize to a specific JSON format:
+
+```javascript
+const buf = Buffer.from('Hi');
+console.log(JSON.stringify(buf));
+// {"type":"Buffer","data":[72,105]}
+
+// Recreate from JSON
+const json = JSON.parse('{"type":"Buffer","data":[72,105]}');
+const restored = Buffer.from(json.data);
+console.log(restored.toString()); // 'Hi'
+```
+
+---
+
+## Buffers and Encoding
+
+Node.js buffers support these character encodings:
+
+| Encoding | Description | Use Case |
+|----------|-------------|----------|
+| `utf8` | Multi-byte Unicode (default) | Text with any language |
+| `ascii` | 7-bit ASCII | Simple English text |
+| `utf16le` | 2-byte Unicode, little-endian | Windows strings |
+| `latin1` | ISO-8859-1, single byte | Legacy Western European text |
+| `base64` | Base64 encoding | Email attachments, data URLs |
+| `base64url` | URL-safe base64 | JWT tokens, URLs |
+| `hex` | Hexadecimal | Debugging, hashes |
+| `binary` | Alias for latin1 | Legacy |
+
+```javascript
+const buf = Buffer.from('Héllo'); // Contains non-ASCII character
+
+console.log(buf.toString('utf8'));   // 'Héllo' (correct)
+console.log(buf.toString('ascii'));  // 'HÃllo' (mangled - can't handle é)
+console.log(buf.toString('latin1')); // 'Héllo' (works for Western European)
+```
+
+---
+
+## Memory Considerations
+
+### Buffers Live Outside V8 Heap
+
+```javascript
+// V8 heap (normal JavaScript)
+const str = 'x'.repeat(1000000); // Takes V8 memory
+
+// Outside V8 (buffer memory)
+const buf = Buffer.alloc(1000000); // Separate memory pool
+```
+
+This is important because:
+- Buffers don't count toward V8's memory limit
+- Garbage collection works differently
+- Large buffers can be more efficient than large strings
+
+### Buffer Pooling
+
+For small buffers (< 8KB), Node.js uses a shared memory pool:
+
+```javascript
+// These might share underlying memory
+const buf1 = Buffer.allocUnsafe(100);
+const buf2 = Buffer.allocUnsafe(100);
+
+// Use alloc() if you need guaranteed separate memory
+const safe1 = Buffer.alloc(100);
+const safe2 = Buffer.alloc(100);
+```
+
+---
+
+## Quick Reference
+
+| Method | Purpose |
+|--------|---------|
+| `Buffer.from(data)` | Create from string, array, or buffer |
+| `Buffer.alloc(size)` | Create zero-filled buffer |
+| `Buffer.allocUnsafe(size)` | Create uninitialized buffer (fast) |
+| `buf.toString(encoding)` | Convert to string |
+| `buf.slice(start, end)` | Create a view (not copy) |
+| `Buffer.concat(buffers)` | Combine multiple buffers |
+| `buf.copy(target)` | Copy bytes to another buffer |
+| `buf.equals(other)` | Check equality |
+| `buf.indexOf(value)` | Find position of value |
+| `buf.length` | Size in bytes |
+

@@ -1,0 +1,297 @@
+---
+title: RAG Fundamentals
+description: Understanding Retrieval-Augmented Generation for grounding LLM responses in external knowledge
+---
+
+## What is RAG?
+
+**Retrieval-Augmented Generation (RAG)** combines a retrieval system with an LLM to ground responses in external knowledge.
+
+Instead of relying only on what the model learned during training, RAG:
+1. Retrieves relevant information from a knowledge base
+2. Provides that information as context to the LLM
+3. LLM generates a response based on the retrieved context
+
+```
+User Question → Retrieve Relevant Docs → Add to Prompt → LLM → Answer
+```
+
+---
+
+## Why RAG?
+
+### The Context Window Problem
+
+LLMs have limited context windows:
+
+| Model | Context Window |
+|-------|---------------|
+| GPT-4 | 8K - 128K tokens |
+| Claude | 100K - 200K tokens |
+| LLaMA | 4K - 128K tokens |
+
+You can't fit an entire knowledge base into the prompt. RAG solves this by retrieving only the relevant pieces.
+
+### Problems RAG Solves
+
+| Problem | How RAG Helps |
+|---------|---------------|
+| Outdated knowledge | Retrieve from updated sources |
+| Hallucinations | Ground responses in real documents |
+| Domain-specific knowledge | Connect to proprietary data |
+| Source attribution | Point to specific documents |
+| Privacy | Keep sensitive data in your control |
+
+---
+
+## Core RAG Pipeline
+
+### Phase 1: Indexing (Offline)
+
+Prepare your documents for retrieval.
+
+```
+Documents → Chunk → Embed → Store in Vector DB
+```
+
+**1. Load Documents**
+Read your source data (PDFs, web pages, databases, etc.)
+
+**2. Chunk Documents**
+Split into smaller pieces that fit in context and contain coherent information.
+
+```
+500-page manual → 1000 chunks of ~500 tokens each
+```
+
+**3. Create Embeddings**
+Convert each chunk to a vector that captures semantic meaning.
+
+```
+"Python is a programming language" → [0.1, -0.3, 0.5, ..., 0.2]
+```
+
+**4. Store in Vector Database**
+Save embeddings with their source text for fast similarity search.
+
+### Phase 2: Retrieval (Online)
+
+Find relevant chunks for a user query.
+
+```
+Query → Embed → Search Vector DB → Top K chunks
+```
+
+**1. Embed the Query**
+Convert user question to a vector using the same embedding model.
+
+**2. Similarity Search**
+Find chunks whose embeddings are closest to the query embedding.
+
+**3. Return Top K**
+Return the most relevant chunks (typically 3-10).
+
+### Phase 3: Generation (Online)
+
+Generate a response using retrieved context.
+
+```
+System prompt + Retrieved chunks + User question → LLM → Answer
+```
+
+**Prompt structure:**
+```
+You are a helpful assistant. Answer based on the provided context.
+If the context doesn't contain the answer, say you don't know.
+
+Context:
+[Retrieved chunk 1]
+[Retrieved chunk 2]
+[Retrieved chunk 3]
+
+Question: [User's question]
+```
+
+---
+
+## Vector Embeddings
+
+### What Are Embeddings?
+
+Embeddings are dense vector representations of text that capture semantic meaning. Similar texts have similar vectors.
+
+```
+"What is Python?" ≈ "Tell me about Python programming"
+(Close in vector space)
+
+"What is Python?" ≠ "What's the weather today?"
+(Far apart in vector space)
+```
+
+### Embedding Models
+
+| Model | Dimensions | Provider |
+|-------|------------|----------|
+| text-embedding-3-small | 1536 | OpenAI |
+| text-embedding-3-large | 3072 | OpenAI |
+| all-MiniLM-L6-v2 | 384 | Open source |
+| BGE | 1024 | Open source |
+
+### Similarity Metrics
+
+| Metric | Description | Range |
+|--------|-------------|-------|
+| Cosine Similarity | Angle between vectors | -1 to 1 |
+| Euclidean Distance | Straight-line distance | 0 to ∞ |
+| Dot Product | Magnitude-aware similarity | -∞ to ∞ |
+
+Cosine similarity is most common for text embeddings.
+
+---
+
+## Vector Databases
+
+Specialized databases optimized for storing and searching embeddings.
+
+| Database | Type | Key Feature |
+|----------|------|-------------|
+| Pinecone | Cloud | Managed, easy setup |
+| Weaviate | Self-hosted/Cloud | Hybrid search |
+| Chroma | Local/Embedded | Simple, good for prototyping |
+| Qdrant | Self-hosted/Cloud | Performance, filtering |
+| Milvus | Self-hosted | Scale, distributed |
+| PostgreSQL + pgvector | Extension | Use existing Postgres |
+
+### Basic Operations
+
+1. **Upsert:** Add or update vectors with metadata
+2. **Query:** Find similar vectors to a query vector
+3. **Filter:** Combine vector search with metadata filters
+4. **Delete:** Remove vectors by ID or filter
+
+---
+
+## Chunking Strategies
+
+How you split documents significantly affects retrieval quality.
+
+### Fixed Size Chunks
+
+Split by token/character count.
+
+```python
+chunk_size = 500  # tokens
+overlap = 50      # tokens overlap between chunks
+```
+
+**Pros:** Simple, predictable size
+**Cons:** May split mid-sentence, loses context
+
+### Semantic Chunking
+
+Split by semantic boundaries (paragraphs, sections, topics).
+
+**Pros:** Preserves meaning, better retrieval
+**Cons:** Uneven sizes, more complex
+
+### Hierarchical Chunking
+
+Create chunks at multiple levels (document → section → paragraph).
+
+**Pros:** Can retrieve at appropriate granularity
+**Cons:** More storage, complex retrieval
+
+### Overlap
+
+Include some text from adjacent chunks to preserve context.
+
+```
+Chunk 1: [Text A][Overlap AB]
+Chunk 2: [Overlap AB][Text B][Overlap BC]
+Chunk 3: [Overlap BC][Text C]
+```
+
+---
+
+## RAG Optimization
+
+### Problem: Retrieved Chunks Not Relevant
+
+**Solutions:**
+- Better chunking strategy
+- Better embedding model
+- Hybrid search (combine vector + keyword)
+- Re-ranking retrieved results
+
+### Problem: Answer Not Using Context
+
+**Solutions:**
+- Better prompt engineering
+- Explicitly instruct to use only context
+- More specific system prompt
+
+### Problem: Too Much/Little Context
+
+**Solutions:**
+- Tune the number of retrieved chunks (K)
+- Filter by relevance score threshold
+- Summarize chunks before including
+
+---
+
+## Types of RAG
+
+### Naive RAG
+
+Basic implementation: chunk, embed, retrieve, generate.
+
+### Advanced RAG
+
+Add pre-retrieval and post-retrieval processing:
+
+```
+Query → [Query Transformation] → Retrieve → [Re-ranking] → Generate
+```
+
+**Pre-retrieval:**
+- Query expansion
+- Query rewriting
+- Hypothetical document generation
+
+**Post-retrieval:**
+- Re-ranking
+- Filtering
+- Compression
+
+### Modular RAG
+
+Composable pipeline with swappable components:
+- Different retrievers for different query types
+- Multiple knowledge bases
+- Conditional processing based on query
+
+---
+
+## Evaluation Metrics
+
+| Metric | Measures |
+|--------|----------|
+| **Retrieval Precision** | % of retrieved docs that are relevant |
+| **Retrieval Recall** | % of relevant docs that were retrieved |
+| **Answer Relevance** | Is the answer relevant to the question? |
+| **Faithfulness** | Is the answer grounded in retrieved context? |
+| **Answer Correctness** | Is the answer factually correct? |
+
+---
+
+## Common Pitfalls
+
+| Pitfall | Solution |
+|---------|----------|
+| Chunks too large | Reduce chunk size |
+| Chunks too small | Increase or add overlap |
+| Wrong embedding model | Match model to your domain |
+| Not enough chunks retrieved | Increase K |
+| Hallucination despite context | Improve prompt, check context relevance |
+| Slow retrieval | Optimize index, use approximate search |
+

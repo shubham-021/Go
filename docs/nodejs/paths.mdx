@@ -1,0 +1,429 @@
+---
+title: Path Module
+description: Working with file and directory paths in Node.js
+---
+
+## Why Use the Path Module?
+
+File paths differ across operating systems:
+
+| OS | Path Separator | Example |
+|----|----------------|---------|
+| Windows | `\` (backslash) | `C:\Users\name\file.txt` |
+| Linux/macOS | `/` (forward slash) | `/home/name/file.txt` |
+
+The `path` module provides cross-platform methods for working with paths, so your code works everywhere.
+
+```javascript
+import path from 'path';
+
+// Always use path methods instead of string concatenation
+const filePath = path.join('folder', 'subfolder', 'file.txt');
+// Returns 'folder/subfolder/file.txt' on Unix
+// Returns 'folder\subfolder\file.txt' on Windows
+```
+
+---
+
+## Joining Paths
+
+### `path.join()`
+
+Safely concatenates path segments with the correct separator.
+
+```javascript
+import { join } from 'path';
+
+join('folder', 'subfolder', 'file.txt');
+// 'folder/subfolder/file.txt'
+
+join('/users', 'name', 'documents');
+// '/users/name/documents'
+
+// Handles . and .. correctly
+join('folder', '..', 'other', 'file.txt');
+// 'other/file.txt'
+
+// Handles extra slashes
+join('folder/', '/subfolder/', '/file.txt');
+// 'folder/subfolder/file.txt'
+```
+
+### `path.resolve()`
+
+Creates an absolute path. Works from right to left until it forms an absolute path.
+
+```javascript
+import { resolve } from 'path';
+
+// If no absolute path found, uses current working directory
+resolve('folder', 'file.txt');
+// '/current/working/dir/folder/file.txt'
+
+// Stops at the first absolute path (from right)
+resolve('/absolute', 'path', 'file.txt');
+// '/absolute/path/file.txt'
+
+resolve('folder', '/absolute', 'file.txt');
+// '/absolute/file.txt' (ignores 'folder')
+
+// Common pattern: resolve from project root
+resolve(__dirname, '..', 'config', 'settings.json');
+// '/path/to/project/config/settings.json'
+```
+
+### `join()` vs `resolve()`
+
+| Aspect | `join()` | `resolve()` |
+|--------|----------|-------------|
+| Output | Relative or absolute | Always absolute |
+| CWD used? | No | Yes, if needed |
+| Leading `/` | Preserved | Creates absolute path |
+
+```javascript
+join('/a', '/b');    // '/a/b'
+resolve('/a', '/b'); // '/b' (second absolute wins)
+
+join('a', 'b');      // 'a/b' (relative)
+resolve('a', 'b');   // '/cwd/a/b' (absolute)
+```
+
+---
+
+## Parsing Paths
+
+### `path.parse()`
+
+Breaks a path into its components.
+
+```javascript
+import { parse } from 'path';
+
+parse('/home/user/documents/file.txt');
+// {
+//   root: '/',
+//   dir: '/home/user/documents',
+//   base: 'file.txt',
+//   ext: '.txt',
+//   name: 'file'
+// }
+
+parse('C:\\Users\\name\\file.txt'); // Windows
+// {
+//   root: 'C:\\',
+//   dir: 'C:\\Users\\name',
+//   base: 'file.txt',
+//   ext: '.txt',
+//   name: 'file'
+// }
+```
+
+### Component Extraction Helpers
+
+```javascript
+import { dirname, basename, extname } from 'path';
+
+const filePath = '/home/user/docs/report.pdf';
+
+dirname(filePath);   // '/home/user/docs'
+basename(filePath);  // 'report.pdf'
+extname(filePath);   // '.pdf'
+
+// basename with extension removal
+basename(filePath, '.pdf');  // 'report'
+basename('archive.tar.gz', '.gz');  // 'archive.tar'
+```
+
+---
+
+## Building Paths
+
+### `path.format()`
+
+Builds a path from components (opposite of `parse()`).
+
+```javascript
+import { format } from 'path';
+
+format({
+  dir: '/home/user',
+  base: 'file.txt'
+});
+// '/home/user/file.txt'
+
+format({
+  root: '/',
+  dir: '/home/user',
+  name: 'file',
+  ext: '.txt'
+});
+// '/home/user/file.txt'
+```
+
+### Priority Rules
+
+- `base` takes priority over `name` + `ext`
+- `dir` takes priority over `root`
+
+```javascript
+format({
+  root: '/',
+  base: 'file.txt',
+  name: 'ignored',   // Ignored because base is provided
+  ext: '.ignored'    // Ignored because base is provided
+});
+// '/file.txt'
+```
+
+---
+
+## Path Information
+
+### `path.isAbsolute()`
+
+Checks if a path is absolute.
+
+```javascript
+import { isAbsolute } from 'path';
+
+isAbsolute('/home/user');     // true (Unix)
+isAbsolute('C:\\Users');      // true (Windows)
+isAbsolute('./folder');       // false
+isAbsolute('folder/file');    // false
+```
+
+### `path.relative()`
+
+Calculates the relative path from one location to another.
+
+```javascript
+import { relative } from 'path';
+
+relative('/home/user/project', '/home/user/project/src/file.js');
+// 'src/file.js'
+
+relative('/home/user/docs', '/home/user/project/file.js');
+// '../project/file.js'
+
+relative('/a/b/c', '/a/b/c');
+// '' (same path)
+```
+
+### `path.normalize()`
+
+Cleans up a path by resolving `.` and `..` and removing duplicate separators.
+
+```javascript
+import { normalize } from 'path';
+
+normalize('/home//user/../user/./docs');
+// '/home/user/docs'
+
+normalize('folder//subfolder//..//file.txt');
+// 'folder/file.txt'
+```
+
+---
+
+## Platform-Specific Paths
+
+### Current Platform
+
+```javascript
+import path from 'path';
+
+console.log(path.sep);       // '/' on Unix, '\\' on Windows
+console.log(path.delimiter); // ':' on Unix, ';' on Windows
+```
+
+### Force Specific Platform
+
+```javascript
+import path from 'path';
+
+// Always use Windows-style
+path.win32.join('folder', 'file');  // 'folder\\file'
+
+// Always use POSIX-style (Unix)
+path.posix.join('folder', 'file');  // 'folder/file'
+```
+
+---
+
+## Common Patterns
+
+### Get Current Directory
+
+```javascript
+// Current working directory (where Node was started)
+process.cwd();
+// '/home/user/project'
+
+// ES Modules: Get directory of current file
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+```
+
+### Project Root Reference
+
+```javascript
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// Paths relative to current file
+const configPath = join(__dirname, '..', 'config', 'settings.json');
+const templatesDir = join(__dirname, '..', 'templates');
+
+// Or define a project root constant
+const PROJECT_ROOT = join(__dirname, '..');
+const srcDir = join(PROJECT_ROOT, 'src');
+```
+
+### Change Extension
+
+```javascript
+import { basename, dirname, join } from 'path';
+
+function changeExtension(filePath, newExt) {
+  const dir = dirname(filePath);
+  const name = basename(filePath, extname(filePath));
+  return join(dir, name + newExt);
+}
+
+changeExtension('/path/to/file.txt', '.md');
+// '/path/to/file.md'
+```
+
+### Ensure Extension
+
+```javascript
+import { extname } from 'path';
+
+function ensureExtension(filePath, ext) {
+  return extname(filePath) === ext ? filePath : filePath + ext;
+}
+
+ensureExtension('config', '.json');      // 'config.json'
+ensureExtension('config.json', '.json'); // 'config.json'
+```
+
+### Safe Path (No Traversal)
+
+Prevent directory traversal attacks:
+
+```javascript
+import { join, resolve, relative } from 'path';
+
+function safePath(baseDir, userPath) {
+  const fullPath = resolve(baseDir, userPath);
+  const relativePath = relative(baseDir, fullPath);
+  
+  // If relative path starts with '..', it's outside baseDir
+  if (relativePath.startsWith('..') || isAbsolute(relativePath)) {
+    throw new Error('Path traversal attempt blocked');
+  }
+  
+  return fullPath;
+}
+
+// Usage
+const uploadsDir = '/app/uploads';
+
+safePath(uploadsDir, 'image.png');        // OK: '/app/uploads/image.png'
+safePath(uploadsDir, '../config.json');   // Throws error!
+safePath(uploadsDir, '/etc/passwd');      // Throws error!
+```
+
+---
+
+## Working with URLs
+
+### Convert Between Path and URL
+
+```javascript
+import { fileURLToPath, pathToFileURL } from 'url';
+
+// URL to path
+const filePath = fileURLToPath('file:///home/user/file.txt');
+// '/home/user/file.txt'
+
+// Path to URL
+const fileURL = pathToFileURL('/home/user/file.txt');
+// URL { href: 'file:///home/user/file.txt', ... }
+```
+
+### import.meta.url
+
+In ES Modules, `import.meta.url` gives the current file's URL:
+
+```javascript
+console.log(import.meta.url);
+// 'file:///home/user/project/src/index.js'
+
+import { fileURLToPath } from 'url';
+const currentFile = fileURLToPath(import.meta.url);
+// '/home/user/project/src/index.js'
+```
+
+---
+
+## Quick Reference
+
+| Task | Method |
+|------|--------|
+| Join path segments | `join('a', 'b', 'c')` |
+| Create absolute path | `resolve('relative', 'path')` |
+| Get directory | `dirname('/path/to/file.txt')` |
+| Get filename | `basename('/path/to/file.txt')` |
+| Get extension | `extname('/path/to/file.txt')` |
+| Parse path | `parse('/path/to/file.txt')` |
+| Build path | `format({ dir, name, ext })` |
+| Normalize path | `normalize('/a/../b//c')` |
+| Relative path | `relative('/from', '/to')` |
+| Is absolute? | `isAbsolute('/path')` |
+| Path separator | `path.sep` |
+| URL to path | `fileURLToPath(url)` |
+| Path to URL | `pathToFileURL(path)` |
+
+---
+
+## Common Gotchas
+
+### String Concatenation is Wrong
+
+```javascript
+// Wrong - breaks on Windows
+const bad = folder + '/' + file;
+
+// Right - works everywhere  
+const good = join(folder, file);
+```
+
+### `__dirname` in ES Modules
+
+```javascript
+// CommonJS (works)
+console.log(__dirname);
+
+// ES Modules (undefined)
+console.log(__dirname); // ReferenceError!
+
+// ES Modules (correct)
+import { dirname } from 'path';
+import { fileURLToPath } from 'url';
+const __dirname = dirname(fileURLToPath(import.meta.url));
+```
+
+### Trailing Slashes
+
+```javascript
+join('/path/to/', '/');   // '/path/to/'
+join('/path/to', '');     // '/path/to'
+join('/path/to', '.');    // '/path/to'
+```
+

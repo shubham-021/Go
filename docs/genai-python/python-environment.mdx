@@ -1,0 +1,177 @@
+---
+title: Python Environment Setup
+description: Understanding virtual environments and pip for GenAI projects
+---
+
+## Virtual Environments
+
+### What is a Virtual Environment?
+
+A virtual environment is an **isolated Python installation** for a specific project. It has its own set of packages completely separate from other projects and your system Python.
+
+Think of it as a dedicated workspace where you can install any packages without affecting anything else on your computer.
+
+### Why Virtual Environments Matter for GenAI
+
+GenAI projects often have complex dependencies:
+- `transformers` version 4.35 might need `torch` 2.0
+- Another project might need `torch` 1.13
+- Some packages conflict with each other
+
+Without virtual environments, you'd constantly break one project while working on another.
+
+| Scenario | Without venv | With venv |
+|----------|--------------|-----------|
+| Project A needs torch 1.13 | Global install | Isolated in Project A's venv |
+| Project B needs torch 2.0 | Overwrites 1.13, breaks A | Isolated in Project B's venv |
+| Update breaks something | Affects all projects | Only affects one project |
+
+---
+
+## Creating and Using Virtual Environments
+
+### Step 1: Create
+
+```bash
+python -m venv venv
+```
+
+| Part | Meaning |
+|------|---------|
+| `python` | Your Python interpreter |
+| `-m venv` | Run the built-in venv module |
+| `venv` | Name of the folder to create (convention) |
+
+This creates a `venv/` folder containing:
+- A copy of the Python interpreter
+- A fresh `pip` installation
+- Empty `site-packages` directory
+
+### Step 2: Activate
+
+**macOS/Linux:**
+```bash
+source venv/bin/activate
+```
+
+**Windows:**
+```bash
+venv\Scripts\activate
+```
+
+When activated, your prompt changes:
+```bash
+(venv) ~/project $
+```
+
+### Step 3: Work
+
+While activated:
+- `pip install` packages go into this environment only
+- `python` runs this environment's interpreter
+- System Python remains untouched
+
+### Step 4: Deactivate
+
+```bash
+deactivate
+```
+
+Returns to your normal shell.
+
+---
+
+## pip: Python's Package Manager
+
+### What is pip?
+
+`pip` installs packages from the **Python Package Index (PyPI)**, a repository of over 400,000 Python packages.
+
+### Basic Commands
+
+| Command | Purpose |
+|---------|---------|
+| `pip install package` | Install a package |
+| `pip install package==1.2.3` | Install specific version |
+| `pip uninstall package` | Remove a package |
+| `pip list` | Show installed packages |
+| `pip show package` | Show package details |
+| `pip install --upgrade package` | Upgrade to latest |
+
+### Dependencies
+
+When you install a package, pip automatically installs its dependencies:
+
+```bash
+pip install transformers
+```
+
+This might install 20+ packages that `transformers` needs (torch, tokenizers, huggingface_hub, etc.).
+
+---
+
+## Requirements Files
+
+### Why Requirements Files?
+
+When sharing a project, others need to install the same packages. A `requirements.txt` file lists exactly what's needed.
+
+### Creating requirements.txt
+
+```bash
+pip freeze > requirements.txt
+```
+
+This outputs all installed packages with exact versions:
+```
+torch==2.0.1
+transformers==4.35.0
+numpy==1.24.3
+...
+```
+
+### Installing from requirements.txt
+
+```bash
+pip install -r requirements.txt
+```
+
+### The Complete Workflow
+
+**Developer A (creating the project):**
+```bash
+python -m venv venv
+source venv/bin/activate
+pip install transformers torch
+# ... develop the project ...
+pip freeze > requirements.txt
+git add requirements.txt
+```
+
+**Developer B (cloning and running):**
+```bash
+git clone project-repo
+cd project-repo
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+# Ready to work!
+```
+
+---
+
+## Best Practices
+
+1. **Always use virtual environments** for GenAI projects
+2. **Name it `venv`** (convention, and often in `.gitignore`)
+3. **Never commit the venv folder** (add to `.gitignore`)
+4. **Commit requirements.txt** so others can recreate the environment
+5. **Update requirements.txt** when adding new packages
+
+```bash
+# .gitignore
+venv/
+__pycache__/
+*.pyc
+```
+

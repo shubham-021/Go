@@ -1,0 +1,237 @@
+---
+title: Fine-Tuning
+description: Adapting pre-trained models to your specific task through fine-tuning
+---
+
+## What is Fine-Tuning?
+
+Fine-tuning takes a pre-trained model and continues training it on your specific data. The model already knows language; you're teaching it your particular domain or task.
+
+```
+Pre-trained model (general knowledge)
+        ↓
+    Fine-tuning
+        ↓
+Specialized model (your task)
+```
+
+---
+
+## Why Fine-Tune?
+
+| Scenario | Solution |
+|----------|----------|
+| Model doesn't know your domain | Fine-tune on domain data |
+| Need specific output format | Fine-tune with examples |
+| Reduce prompt engineering | Teach the model directly |
+| Improve consistency | Fine-tune for your use case |
+| Privacy/cost concerns | Fine-tune smaller model to match larger one |
+
+### Fine-Tuning vs Prompting
+
+| Approach | Pros | Cons |
+|----------|------|------|
+| Prompting | Quick, no training needed | Limited, uses context window |
+| Fine-tuning | Permanent learning, better results | Requires data and compute |
+
+---
+
+## Types of Fine-Tuning
+
+### Full Parameter Fine-Tuning
+
+**What:** Update all model parameters during training.
+
+**Pros:**
+- Maximum adaptation to your data
+- Best possible performance
+
+**Cons:**
+- Requires significant GPU memory (often multiple GPUs)
+- Risk of catastrophic forgetting (losing original abilities)
+- Creates a full-size model copy
+
+**When to use:** When you have substantial compute resources and need maximum performance.
+
+### LoRA (Low-Rank Adaptation)
+
+**What:** Freeze the original model and train small "adapter" matrices that modify the model's behavior.
+
+**The Concept:**
+
+Instead of updating a large weight matrix `W`, LoRA adds a small update:
+```
+W_new = W_original + (A × B)
+```
+
+Where `A` and `B` are much smaller matrices:
+- Original W: 4096 × 4096 = 16M parameters
+- LoRA A: 4096 × 16 = 65K parameters
+- LoRA B: 16 × 4096 = 65K parameters
+- Total LoRA: 130K parameters (< 1% of original)
+
+**Pros:**
+- Dramatically reduced memory requirements
+- Can run on consumer GPUs
+- Original model unchanged
+- Easy to swap adapters for different tasks
+- Adapters are small (MBs vs GBs)
+
+**Cons:**
+- Slightly lower performance than full fine-tuning
+- Adding more LoRA parameters increases training time
+
+**When to use:** Most situations. LoRA is the go-to approach for fine-tuning LLMs.
+
+### QLoRA (Quantized LoRA)
+
+**What:** Combine LoRA with 4-bit quantization.
+
+Load the base model in 4-bit precision, then apply LoRA adapters. This allows fine-tuning 65B+ parameter models on a single GPU.
+
+---
+
+## Fine-Tuning Data
+
+### Data Format
+
+Most fine-tuning uses instruction-following format:
+
+```json
+[
+  {
+    "instruction": "Summarize the following text",
+    "input": "Long article about climate change...",
+    "output": "Climate change is causing..."
+  },
+  {
+    "instruction": "Translate to French",
+    "input": "Hello, how are you?",
+    "output": "Bonjour, comment allez-vous?"
+  }
+]
+```
+
+Or conversation format:
+```json
+[
+  {
+    "messages": [
+      {"role": "system", "content": "You are a helpful assistant."},
+      {"role": "user", "content": "What is Python?"},
+      {"role": "assistant", "content": "Python is a programming language..."}
+    ]
+  }
+]
+```
+
+### Data Quality
+
+| Factor | Impact |
+|--------|--------|
+| Quality | More important than quantity |
+| Diversity | Prevents overfitting to narrow cases |
+| Correctness | Model learns wrong patterns from bad data |
+| Format consistency | Helps model learn the pattern |
+
+**Recommended minimum:** 100-1000 high-quality examples for most use cases.
+
+---
+
+## Training Concepts
+
+### Epochs
+
+One epoch = one complete pass through all training data.
+
+- Too few epochs: Model hasn't learned enough
+- Too many epochs: Overfitting (memorizes training data)
+
+Typical range: 1-5 epochs for LLM fine-tuning.
+
+### Learning Rate
+
+How much to adjust weights based on errors.
+
+- Too high: Training unstable, might diverge
+- Too low: Training too slow, might get stuck
+
+Typical range: 1e-5 to 5e-5 for fine-tuning.
+
+### Batch Size
+
+Number of examples processed before updating weights.
+
+- Larger: More stable gradients, requires more memory
+- Smaller: More frequent updates, can escape local minima
+
+Limited by GPU memory. Use gradient accumulation to simulate larger batches.
+
+---
+
+## Overfitting
+
+When the model memorizes training data instead of learning general patterns.
+
+**Signs:**
+- Training loss keeps decreasing
+- Validation loss starts increasing
+- Model gives exact training responses instead of generalizing
+
+**Prevention:**
+- More diverse training data
+- Fewer epochs
+- Early stopping (stop when validation loss stops improving)
+- Regularization techniques
+
+---
+
+## When to Fine-Tune vs When Not To
+
+### Fine-Tune When:
+- Prompting isn't achieving desired results
+- You have high-quality training data
+- You need consistent output format
+- Domain is specialized (medical, legal, proprietary)
+
+### Don't Fine-Tune When:
+- Prompting works well enough
+- You don't have quality data
+- The task changes frequently
+- RAG can provide needed context
+
+---
+
+## Tools Overview
+
+### Hugging Face PEFT
+
+Library for parameter-efficient fine-tuning (LoRA, etc.).
+
+```bash
+pip install peft
+```
+
+### Axolotl
+
+High-level fine-tuning framework. Configuration-based, handles many models.
+
+### LLaMA Factory
+
+Web UI and CLI for fine-tuning LLaMA family models.
+
+### OpenAI Fine-Tuning API
+
+Upload your data, OpenAI handles the training. Simplest approach for GPT models.
+
+---
+
+## Evaluation
+
+After fine-tuning, evaluate the model:
+
+1. **Held-out test set:** Examples not used in training
+2. **Human evaluation:** Does output quality meet your standards?
+3. **Task-specific metrics:** Accuracy, BLEU score, etc.
+4. **A/B testing:** Compare against base model or previous version
+

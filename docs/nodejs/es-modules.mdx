@@ -1,0 +1,264 @@
+---
+title: ES Modules
+description: Understanding JavaScript module systems in Node.js and how to use modern import/export syntax
+---
+
+## The Two Module Systems
+
+Node.js supports two module systems:
+
+| Feature | CommonJS (CJS) | ES Modules (ESM) |
+|---------|----------------|------------------|
+| Syntax | `require()` / `module.exports` | `import` / `export` |
+| Loading | Synchronous | Asynchronous |
+| File Extension | `.js` (default) or `.cjs` | `.mjs` or `.js` with config |
+| Top-level await | Not supported | Supported |
+| Default in Node | Yes (legacy) | Opt-in |
+
+---
+
+## CommonJS (The Legacy Default)
+
+CommonJS was Node.js's original module system, designed before JavaScript had native module support.
+
+```javascript
+// math.js (exporting)
+function add(a, b) {
+  return a + b;
+}
+
+function subtract(a, b) {
+  return a - b;
+}
+
+module.exports = { add, subtract };
+```
+
+```javascript
+// app.js (importing)
+const { add, subtract } = require('./math');
+
+console.log(add(2, 3)); // 5
+```
+
+CommonJS loads modules **synchronously**, which works well for server-side code but isn't suitable for browsers.
+
+---
+
+## ES Modules (The Modern Standard)
+
+ES Modules are the official JavaScript standard, supported natively in browsers and modern Node.js versions.
+
+```javascript
+// math.js (exporting)
+export function add(a, b) {
+  return a + b;
+}
+
+export function subtract(a, b) {
+  return a - b;
+}
+
+// Default export
+export default function multiply(a, b) {
+  return a * b;
+}
+```
+
+```javascript
+// app.js (importing)
+import multiply, { add, subtract } from './math.js';
+
+console.log(add(2, 3));      // 5
+console.log(multiply(2, 3)); // 6
+```
+
+---
+
+## Enabling ES Modules in Node.js
+
+By default, Node.js treats `.js` files as CommonJS. You have two options to use ES Modules:
+
+### Option 1: Set `"type": "module"` in package.json
+
+```json
+{
+  "name": "my-app",
+  "version": "1.0.0",
+  "type": "module"
+}
+```
+
+With this setting, **all `.js` files** in your project are treated as ES Modules.
+
+```javascript
+// Works in any .js file
+import express from 'express';
+import { readFile } from 'fs/promises';
+```
+
+### Option 2: Use the `.mjs` Extension
+
+Without changing `package.json`, you can use the `.mjs` extension for individual files:
+
+```javascript
+// utils.mjs
+export function greet(name) {
+  return `Hello, ${name}!`;
+}
+```
+
+```javascript
+// app.mjs
+import { greet } from './utils.mjs';
+```
+
+Node.js treats `.mjs` files as ES Modules regardless of `package.json` settings.
+
+---
+
+## Why the Error Happens
+
+If you try to use `import` in a `.js` file without configuring ES Modules:
+
+```javascript
+// app.js
+import express from 'express'; // Error!
+```
+
+Node.js throws:
+
+```
+SyntaxError: Cannot use import statement outside a module
+```
+
+This happens because Node assumes `.js` files are CommonJS, and `import` is not valid CommonJS syntax.
+
+**Fix:** Add `"type": "module"` to `package.json` or rename the file to `.mjs`.
+
+---
+
+## Mixing Module Systems
+
+Sometimes you need to use CommonJS packages in an ES Module project, or vice versa.
+
+### Importing CommonJS in ES Modules
+
+CommonJS modules can be imported using the default import syntax:
+
+```javascript
+// ES Module importing a CommonJS package
+import lodash from 'lodash';
+
+// Named imports may not work for all CJS packages
+// Use the default import and destructure instead
+const { debounce, throttle } = lodash;
+```
+
+### Using ES Modules in CommonJS
+
+You cannot use `require()` with ES Modules. Use dynamic `import()` instead:
+
+```javascript
+// CommonJS file using an ES Module
+async function main() {
+  const { myFunction } = await import('./es-module.mjs');
+  myFunction();
+}
+
+main();
+```
+
+---
+
+## File Extension Behavior
+
+| Extension | Behavior |
+|-----------|----------|
+| `.js` | Follows `"type"` field in nearest `package.json` |
+| `.mjs` | Always ES Module |
+| `.cjs` | Always CommonJS |
+
+Use `.cjs` when you need a CommonJS file in an otherwise ESM project:
+
+```javascript
+// config.cjs (CommonJS in an ESM project)
+module.exports = {
+  apiUrl: 'https://api.example.com'
+};
+```
+
+---
+
+## Import Paths in ES Modules
+
+ES Modules require **file extensions** in relative imports:
+
+```javascript
+// CommonJS (extension optional)
+const utils = require('./utils');
+
+// ES Modules (extension required)
+import { helper } from './utils.js';
+```
+
+This is a common source of errors when migrating from CommonJS to ES Modules.
+
+---
+
+## Top-Level Await
+
+ES Modules support `await` at the top level, outside of async functions:
+
+```javascript
+// Only works in ES Modules
+const response = await fetch('https://api.example.com/data');
+const data = await response.json();
+
+console.log(data);
+
+export { data };
+```
+
+This is not possible in CommonJS, where you would need to wrap everything in an async function.
+
+---
+
+## Quick Reference
+
+| Task | CommonJS | ES Modules |
+|------|----------|------------|
+| Export function | `module.exports = fn` | `export function fn()` |
+| Export object | `module.exports = { a, b }` | `export { a, b }` |
+| Default export | `module.exports = fn` | `export default fn` |
+| Import default | `const x = require('x')` | `import x from 'x'` |
+| Import named | `const { a } = require('x')` | `import { a } from 'x'` |
+| Dynamic import | `require(path)` | `await import(path)` |
+
+---
+
+## Migration Checklist
+
+When converting a project from CommonJS to ES Modules:
+
+1. Add `"type": "module"` to `package.json`
+2. Change `require()` to `import`
+3. Change `module.exports` to `export`
+4. Add `.js` extensions to relative imports
+5. Replace `__dirname` and `__filename` (not available in ESM)
+6. Test dynamic imports if using conditional requires
+
+### Replacing `__dirname` and `__filename`
+
+These CommonJS globals don't exist in ES Modules. Use this pattern instead:
+
+```javascript
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+console.log(__dirname); // Current directory path
+```
+
