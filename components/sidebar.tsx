@@ -32,7 +32,7 @@ function CollapsibleSection({ title, items, pathname, theme, onLinkClick }: Coll
             <button
                 onClick={() => setIsExpanded(!isExpanded)}
                 className={cn(
-                    "w-full flex items-center justify-between mb-2 pl-3 pr-2 py-1 border-l-2 border-emerald-500 uppercase tracking-widest text-lg font-extrabold transition-colors cursor-pointer rounded-r-md",
+                    "w-full flex items-center justify-between mb-2 pl-3 pr-2 py-1 border-l-2 border-emerald-500 uppercase tracking-widest text-sm font-extrabold transition-colors cursor-pointer rounded-r-md",
                     theme === "dark"
                         ? "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
                         : "text-zinc-500 hover:text-zinc-700 hover:bg-[#e6dec9]/50"
