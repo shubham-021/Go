@@ -130,4 +130,41 @@ export const navigation: NavSection[] = [
             { title: "Server Actions & Forms", slug: "nextjs/server-actions-forms" },
         ],
     },
+    {
+        title: "Node.js",
+        items: [
+            { title: "ES Modules", slug: "nodejs/es-modules" },
+            { title: "Express Middleware", slug: "nodejs/express-middleware" },
+            { title: "Express Server", slug: "nodejs/express-server" },
+            { title: "Cookie Authentication", slug: "nodejs/cookie-authentication" },
+            { title: "Buffers", slug: "nodejs/buffers" },
+            { title: "Streams", slug: "nodejs/streams" },
+            { title: "File System", slug: "nodejs/file-system" },
+            { title: "Paths", slug: "nodejs/paths" },
+        ],
+    },
+    {
+        title: "Random",
+        items: [
+            { title: "WebSockets", slug: "random/websockets" },
+            { title: "WebSockets in Production", slug: "random/websockets-production" },
+        ],
+    },
+    {
+        title: "GenAI with Python",
+        items: [
+            { title: "Transformer Fundamentals", slug: "genai-python/transformer-fundamentals" },
+            { title: "Python Environment", slug: "genai-python/python-environment" },
+            { title: "Prompting", slug: "genai-python/prompting" },
+            { title: "Inference", slug: "genai-python/inference" },
+            { title: "Fine-Tuning", slug: "genai-python/fine-tuning" },
+            { title: "RAG Fundamentals", slug: "genai-python/rag-fundamentals" },
+            { title: "Advanced RAG", slug: "genai-python/rag-advanced" },
+            { title: "LangChain", slug: "genai-python/langchain" },
+            { title: "LangGraph", slug: "genai-python/langgraph" },
+            { title: "Knowledge Graphs & Memory", slug: "genai-python/knowledge-graphs-memory" },
+            { title: "Tracing", slug: "genai-python/tracing" },
+            { title: "MCP, A2A & Guardrails", slug: "genai-python/mcp-a2a-guardrails" },
+        ],
+    },
 ];
